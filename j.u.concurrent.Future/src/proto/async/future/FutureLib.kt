@@ -39,19 +39,15 @@ class ResultBox<P>(private val cofun: CofunBase<*>) : CofunStep<P> {
 class FutureWFM(val e: ExecutorService) {
     fun <T> cofun(init: CofunInit<T>): Future<T> {
         var value: T? = null
-        val barrier = Object()
+        val latch = CountDownLatch(1)
         val task = FutureTask {
             init.start()
-            synchronized(barrier) {
-                barrier.wait()
-                value!!
-            }
+            latch.await()
+            value!!
         }
         init.registerResultHandler {
-            synchronized(barrier) {
-                value = it
-                barrier.notify()
-            }
+            value = it
+            latch.countDown()
         }
         e.execute(task)
         return task
@@ -124,7 +120,7 @@ fun main(args: Array<String>) {
 
     }
 
-    println(wfm.cofun(inner).get())
+//    println(wfm.cofun(inner).get())
 
     val outer = object : CofunBase<String>() {
         var result1: ResultBox<String>? = null
