@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/async-proto.iml" filepath="$PROJECT_DIR$/async-proto.iml" />
+      <module fileurl="file://$PROJECT_DIR$/j.u.concurrent.Future/j.u.concurrent.Future.iml" filepath="$PROJECT_DIR$/j.u.concurrent.Future/j.u.concurrent.Future.iml" />
     </modules>
   </component>
 </project>
