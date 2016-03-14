@@ -8,33 +8,12 @@ interface CofunInit<T> {
     // exception handler?
 }
 
-interface CofunStep<P> {
-    fun doStep(parameter: P)
+interface CofunStep {
+    fun doStep()
     fun doStepWithException(e: Throwable)
 }
 
 // --------
-
-class ResultBox<P>(private val cofun: CofunBase<*>) : CofunStep<P> {
-
-    sealed class Result<out P> {
-        class Value<P>(val value: P) : Result<P>()
-        class Exception(val exception: Throwable) : Result<Nothing>()
-    }
-
-    var result: Result<P>? = null
-
-    override fun doStep(parameter: P) {
-        result = Result.Value(parameter)
-        cofun.nextStep()
-    }
-
-    override fun doStepWithException(e: Throwable) {
-        result = Result.Exception(e)
-        cofun.nextStep()
-    }
-
-}
 
 class FutureWFM(val e: ExecutorService) {
     fun <T> cofun(init: CofunInit<T>): Future<T> {
@@ -53,28 +32,29 @@ class FutureWFM(val e: ExecutorService) {
         return task
     }
 
-    fun <T> handleStep(f: Future<T>, nextStep: CofunStep<T>) {
+    fun <T> yieldFor(f: Future<T>, nextStep: CofunStep) {
         try {
-            val v = f.get()
-            nextStep.doStep(v)
+            f.get()
+            nextStep.doStep()
         }
         catch (e: ExecutionException) {
             nextStep.doStepWithException(e.cause!!)
         }
     }
+
+    fun <T> getResult(f: Future<T>): T {
+        return f.get()
+    }
 }
 
-abstract class CofunBase<R> : CofunInit<R> {
+abstract class CofunBase<R> : CofunInit<R>, CofunStep {
     protected var label = 1
+    protected var exception: Throwable? = null
 
     @Volatile
     private var resultHandler: ((R) -> Unit)? = null
 
     protected abstract fun main()
-
-    internal fun nextStep() {
-        main()
-    }
 
     override fun start() {
         assert(label == 1)
@@ -92,6 +72,14 @@ abstract class CofunBase<R> : CofunInit<R> {
         resultHandler!!(result)
     }
 
+    override fun doStep() {
+        main()
+    }
+
+    override fun doStepWithException(e: Throwable) {
+        exception = e
+        main()
+    }
 }
 
 fun main(args: Array<String>) {
@@ -123,34 +111,27 @@ fun main(args: Array<String>) {
 //    println(wfm.cofun(inner).get())
 
     val outer = object : CofunBase<String>() {
-        var result1: ResultBox<String>? = null
+
+        lateinit var f1: Future<String>
 
         override fun main() {
             when (label) {
                 1 -> {
                     println("started")
-                    val f1 = wfm.cofun(inner) // ?
+                    f1 = wfm.cofun(inner) // ?
                     println("continued")
 
                     // await f1
                     label = 2
-                    result1 = ResultBox(this)
-                    wfm.handleStep(f1, result1!!)
+                    wfm.yieldFor(f1, this)
                     return
                 }
                 2 -> {
-                    val result = result1!!.result
-                    when (result) {
-                        is ResultBox.Result.Exception -> {
-                            throw result.exception
-                        }
-                        is ResultBox.Result.Value -> {
-                            val tmp1 = result.value
-                            label = 0
-                            handleResult("result: $tmp1")
-                            return
-                        }
-                    }
+                    if (exception != null) throw exception!!
+                    val tmp1 = wfm.getResult(f1)
+                    label = 0
+                    handleResult("result: $tmp1")
+                    return
                 }
             }
         }
