@@ -19,6 +19,31 @@ val e = maybe {
 ```
 
 ``` kotlin
+label 1:
+    label = 2
+    wfm.defaultResult(5, this)
+    return
+label 2:
+    if (exception != null) throw exception
+    val tmp = foo?.bar
+    label = 3
+    tmp.mb(this)
+    return
+label 3:
+    if (exception != null) throw exception
+    x = result
+    val tmp = x.baz
+    label = 4
+    tmp.mb(this)
+    return
+label 4:
+    if (exception != null) throw exception
+    y = result
+    complete(x + y, this)
+    return
+```
+
+``` kotlin
 fun <T> maybe(cofun start: CofunStart<MaybeWFM, () -> Unit, MaybeState<T>): T? {
     val state = MaybeState<T>()
     start.setState(state)
@@ -37,7 +62,7 @@ object MaybeWFM {
         step.exec(this)
     }
     
-    operator fun complete(v: T, last: Last<MaybeState<T>>) {
+    fun complete(v: T, cofun last: Last<MaybeState<T>>) {
         last.result = v
     }
 }
