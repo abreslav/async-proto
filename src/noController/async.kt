@@ -12,8 +12,8 @@ fun main(args: Array<String>) {
     future.join()
 }
 
-fun <T> async(value: Int, c: (Int) -> Coroutine<CompletableFutureContext<T>>): CompletableFuture<T> = CompletableFuture<T>().apply {
-    c(value).create(CompletableFutureContext()).resume(Unit)
+fun <T> async(value: Int, c: (Int) -> Coroutine<CompletableFutureContext<T>>): CompletableFuture<T> = CompletableFutureContext<T>().apply {
+    c(value).create(this).resume(Unit)
 }
 
 private fun foo(v: Int): CompletableFuture<String> = CompletableFuture.supplyAsync { "foo with $v" }
@@ -96,9 +96,7 @@ class Machine() : Coroutine<CompletableFutureContext<String>>,
     }
 }
 
-class CompletableFutureContext<T> {
-    private val future = CompletableFuture<T>()
-
+class CompletableFutureContext<T> : CompletableFuture<T>() {
     fun <V> await(future: CompletableFuture<V>, machine: Continuation<V>) {
         future.whenComplete { value, throwable ->
             if (throwable == null)
@@ -109,6 +107,6 @@ class CompletableFutureContext<T> {
     }
 
     fun complete(value: T, machine: Continuation<Nothing>) {
-        future.complete(value)
+        complete(value)
     }
 }
