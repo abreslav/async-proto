@@ -30,7 +30,7 @@ private fun bar(v: String): CompletableFuture<String> = CompletableFuture.supply
     }
  */
 class Machine() : Coroutine<CompletableFutureContext<String>>,
-        Continuation<Any?, CompletableFutureContext<String>>,
+        Continuation<Any?>,
         Function1<Int, Coroutine<CompletableFutureContext<String>>> {
 
     private fun createMachine(): Machine = if (_context == null) this else Machine()
@@ -38,7 +38,7 @@ class Machine() : Coroutine<CompletableFutureContext<String>>,
         v = p1
     }
 
-    override fun create(context: CompletableFutureContext<String>): Continuation<Unit, CompletableFutureContext<String>> {
+    override fun create(context: CompletableFutureContext<String>): Continuation<Unit> {
         return createMachine().apply {
             _context = context
         }
@@ -80,7 +80,7 @@ class Machine() : Coroutine<CompletableFutureContext<String>>,
     }
 
 
-    override val context: CompletableFutureContext<String> get() =
+    val context: CompletableFutureContext<String> get() =
     _context ?: throw UnsupportedOperationException("Coroutine $this should be initialized before use")
 
     private var _context: CompletableFutureContext<String>? = null
@@ -99,7 +99,7 @@ class Machine() : Coroutine<CompletableFutureContext<String>>,
 class CompletableFutureContext<T> {
     private val future = CompletableFuture<T>()
 
-    fun <V> await(future: CompletableFuture<V>, machine: Continuation<V, CompletableFutureContext<T>>) {
+    fun <V> await(future: CompletableFuture<V>, machine: Continuation<V>) {
         future.whenComplete { value, throwable ->
             if (throwable == null)
                 machine.resume(value)
@@ -108,7 +108,7 @@ class CompletableFutureContext<T> {
         }
     }
 
-    fun complete(value: T, machine: Continuation<Nothing, CompletableFutureContext<T>>) {
+    fun complete(value: T, machine: Continuation<Nothing>) {
         future.complete(value)
     }
 }

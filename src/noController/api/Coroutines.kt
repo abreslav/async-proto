@@ -1,12 +1,10 @@
 package noController.api
 
-interface Coroutine<Ctx> {
-    fun create(context: Ctx): Continuation<Unit, Ctx>
+interface Coroutine<in Ctx> {
+    fun create(context: Ctx): Continuation<Unit>
 }
 
-interface Continuation<in P, out Ctx> {
-    val context: Ctx
-
+interface Continuation<in P> {
     fun resume(parameter: P)
 
     fun resumeAndThrow(throwable: Throwable)

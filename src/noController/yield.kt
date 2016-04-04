@@ -22,7 +22,7 @@ fun <T> generate(c: () -> Coroutine<SequenceGeneratorContext<T>>): Sequence<T> =
     }
  */
 class Machine() : Coroutine<SequenceGeneratorContext<Int>>,
-        Continuation<Unit, SequenceGeneratorContext<Int>>,
+        Continuation<Unit>,
         Function0<Coroutine<SequenceGeneratorContext<Int>>> {
 
     override fun resume(parameter: Unit) {
@@ -61,7 +61,7 @@ class Machine() : Coroutine<SequenceGeneratorContext<Int>>,
         else -> throw UnsupportedOperationException("Coroutine $this is in an invalid state")
     }
 
-    override val context: SequenceGeneratorContext<Int> get() =
+    val context: SequenceGeneratorContext<Int> get() =
     _context ?: throw UnsupportedOperationException("Coroutine $this should be initialized before use")
 
     private var _context: SequenceGeneratorContext<Int>? = null
@@ -70,7 +70,7 @@ class Machine() : Coroutine<SequenceGeneratorContext<Int>>,
 
     private fun createMachine(): Machine = if (_context == null) this else Machine()
     override fun invoke(): Coroutine<SequenceGeneratorContext<Int>> = createMachine()
-    override fun create(context: SequenceGeneratorContext<Int>): Continuation<Unit, SequenceGeneratorContext<Int>> {
+    override fun create(context: SequenceGeneratorContext<Int>): Continuation<Unit> {
         return createMachine().apply {
             _context = context
         }
@@ -86,24 +86,24 @@ class SequenceGeneratorContext<T>() : AbstractIterator<T>() {
         nextStep.resume(Unit)
     }
 
-    fun advance(value: T, continuation: Continuation<Unit, SequenceGeneratorContext<T>>) {
+    fun advance(value: T, continuation: Continuation<Unit>) {
         setNext(value)
         setNextStep(continuation)
     }
 
     fun complete() = done()
 
-    private lateinit var nextStep: Continuation<Unit, SequenceGeneratorContext<T>>
+    private lateinit var nextStep: Continuation<Unit>
 
-    fun setNextStep(step: Continuation<Unit, SequenceGeneratorContext<T>>) {
+    fun setNextStep(step: Continuation<Unit>) {
         this.nextStep = step
     }
 
-    fun yieldValue(value: T, machine: Continuation<Unit, SequenceGeneratorContext<T>>) {
+    fun yieldValue(value: T, machine: Continuation<Unit>) {
         advance(value, machine)
     }
 
-    fun complete(u: Unit, machine: Continuation<Nothing, SequenceGeneratorContext<T>>) {
+    fun complete(u: Unit, machine: Continuation<Nothing>) {
         complete()
     }
 }
