@@ -2,6 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
+      <module fileurl="file://$PROJECT_DIR$/asm/asm.iml" filepath="$PROJECT_DIR$/asm/asm.iml" />
       <module fileurl="file://$PROJECT_DIR$/async-proto.iml" filepath="$PROJECT_DIR$/async-proto.iml" />
       <module fileurl="file://$PROJECT_DIR$/j.u.c.CompletableFuture/j.u.c.CompletableFuture.iml" filepath="$PROJECT_DIR$/j.u.c.CompletableFuture/j.u.c.CompletableFuture.iml" />
       <module fileurl="file://$PROJECT_DIR$/j.u.concurrent.Future/j.u.concurrent.Future.iml" filepath="$PROJECT_DIR$/j.u.concurrent.Future/j.u.concurrent.Future.iml" />
