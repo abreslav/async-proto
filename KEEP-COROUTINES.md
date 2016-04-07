@@ -170,26 +170,29 @@ Other use cases:
  * Website registration steps implemented without an explicit state machine, but through a (serializable) coroutine
  * TODO
  
+<!-- 
+--------------------- 
+End of examples 
+--------------------- 
+-->  
+ 
 ## Coroutines overview
  
-We think of coroutines as computations having designated _suspension points_, a coroutine can be suspended only at one 
-of its suspension points. All suspension points are known at compile time. While the syntax is not fixed yet, the options 
-are:
+We think of coroutines as computations having designated _suspension points_ (typical examples are calls to `yield` and 
+`await` that cause the coroutine to suspend), a coroutine can be suspended only at such points. 
+All suspension points are known at compile time. While the syntax is not fixed yet, we are leaning towards this:
 
-* a suspension point is designated by a call to a specially annotated function,
-* a suspension point is somehow marked in the code, e.g. with a special symbol or keyword.
+* a suspension point is designated simply by a call to a specially annotated function.
 
-A useful mental model is think that a suspension point receives the _continuation_ as an implicit parameter that it may
+**OPEN QUESTION**: additionally, suspension points may be somehow marked in the code, e.g. with a special symbol or keyword.
+
+A useful mental model is that a suspension point receives the _continuation_ as an implicit parameter that it may
 store or execute at some point.
  
 ## Implementation through state machines
  
 Main idea: the block of code with suspension points inside (a "colambda") is compiled to a state machine, where states
- correspond to suspension points. For example, for a coroutine with two suspension points, there are three states:
- 
- * initial (before any suspension point)
- * after the first suspension point
- * after the second suspension point
+ correspond to suspension points. For example, for a coroutine with two suspension points:
  
 ```
 val a = a()
@@ -198,6 +201,12 @@ b()
 val z = await(bar(a, y)) // suspension point
 c(z)
 ``` 
+ 
+For this coroutine there are three states:
+ 
+ * initial (before any suspension point)
+ * after the first suspension point
+ * after the second suspension point
  
 The code is compiled to an anonymous class that has a method implementing the state machine, a field holding the current
  state of the state machine, and fields for local variables of the coroutines that are shared between states:
@@ -239,8 +248,8 @@ class <anonymous_for_state_machine> : Coroutine {
 ```  
 
 Note that:
- * exception handling code is eliminated here for brevity,
- * there's a `goto` operator and labels, because the example shows the byte code, not the source code,
+ * exception handling and some other details are eliminated here for brevity,
+ * there's a `goto` operator and labels, because the example depicts what happens in the byte code, not the source code.
 
 Now, when the coroutine is started, we call its `main()`: `label` is `0`, and we jump to `L0`, then we do some work, 
 set the `label` to the next state — `1` and return (which is — suspend the execution of the coroutine). 
@@ -313,7 +322,7 @@ val f: Future<T> = asyncExample {
 }
 ```
 
-Here, `asyncExample` is a function that receives a block which is a bofy of a coroutine ("colambda") as an argument. 
+Here, `asyncExample` is a function that receives a block which is a body of a coroutine ("colambda") as an argument. 
 Under the hoods this block is translated into a state machine, and the parameter type for `asyncExample` is not 
 a function type (e.g. `() -> Unit`), but an interface `Coroutine` that exposes functions to initialize the coroutine, 
 start its execution, etc:
@@ -341,7 +350,7 @@ simply a coding pattern.
  
 ### Suspension points
 
-To recap: a _suspension point_ is an expression in the body of a coroutine which cause teh coroutine's execution to
+To recap: a _suspension point_ is an expression in the body of a coroutine which cause the coroutine's execution to
 suspend until it's explicitly resumed by someone.
   
 An example of a suspension point is `await()`, that takes an asynchronous computation (e.g. a `CompletableFuture`) and
@@ -412,7 +421,7 @@ To achieve this, the compiler needs to either generate a new class that implemen
 
 The model presented above is rather flexible: anyone can declare a coroutine builder or a suspension point independently.
 This flexibility may need some governance to avoid chaos, plus for many use cases there's a need for some kind of
-"execution context": a party that knows, for example, what thread pool to schedule computaions on, what time-outs to set,
+"execution context": a party that knows, for example, what thread pool to schedule computations on, what time-outs to set,
 how to handle errors and so on. Plus, there are some type-checking issues, we'll cover below. To address all these concerns
 we introduce _controller objects_.
 
@@ -458,7 +467,7 @@ fun <T> asyncExample(body: Coroutine<CommonPoolFuturesController, () -> Unit, Co
 
     // remember the future we need to complete later, when the coroutine is finished
     val f = CompletableFuture<T>()    
-    body.state = CompletableFuture<T>()
+    body.state = f
 
     // run the first step of the state machine in the ForkJoinPool
     CommonPoolFuturesController.exec { body.firstStep().run(null) }
@@ -499,7 +508,7 @@ object CommonPoolFuturesController {
 }
 ```
  
-Note that interfaes `Continuation` and `CompletedCoroutine` (the last one is passed to completion handlers: one for 
+Note that interfaces `Continuation` and `CompletedCoroutine` (the last one is passed to completion handlers: one for 
 result, i.e. normal termination, the other for exception, i.e. abnormal termination) both have a type-parameter: this is 
 `S`, the custom state, and it must be compatible with the one of the builder that this coroutine is passed to:
   
@@ -525,7 +534,7 @@ val seq = generate {
 ```
 
 Here, the compiler must be able to look at the arguments to `yield` and deduce that the result of `generate` is 
-`Sequence<T>`. This is the kind of analysis that's done for `return` expressions: the type checker collects all 
+`Sequence<Int>`. This is the kind of analysis that's done for `return` expressions: the type checker collects all 
 `return`'s in a lambda and finds a common return type for their expressions. The difference here is that `yield` is
 _just a function_, albeit a suspension point. So, we need to mark it somehow to tell the compiler to treat it specially.
 Note that there may be more than one such function in the same controller, for example:
@@ -539,12 +548,12 @@ val seq1 = generate {
 }
 ```
 
-This sequence has five items of teh previous one (random numbers and zeros), then a zero, then another five, and so on.
+This sequence has five items of the previous one (random numbers and zeros), then a zero, then another five, and so on.
 And the type of seqeuence in `yieldAll` must agree with the type passed to `yield`: one is `Sequence<Int>`, the other is
 `Int`.
  
 We propose to mark a type parameter of such a function as `inferFrom`, so that when `S` parameters are put into agreement,
-the one in the builder application could be inferred from those marked `inferFrom`. Yes, teh inferred type is the `S`:
+the one in the builder application could be inferred from those marked `inferFrom`. Yes, the inferred type is the `S`:
 
 NOTE: the name of the modifier (as well as its applicability rules) is up to discussion.
   
@@ -625,29 +634,7 @@ Use case for extensions as suspension points: web server
  
  
  
- 
-* Design Choices
- * Controller and Context vs Two-in-one
-  * pro: a lot saner type signatures: Coroutine<Ctx>, Continuation<P>
-  * pro: simpler mental model for yield type-checking
-  * pro: no need for inferFrom/unify modifier
-  * con: need to extend CompletableFuture or have to create an extra instance every time for Futures
-  * con: ? it's an implicit receiver in the comlambda, may cause type-checking loops, if we ever want to allow 
-    extensions as suspension points (fun Controller<out Number>.bar())
- * (p) -> Conroutine -> Continuation vs (p, Controller) -> Continuation  
- 
- 
- 
- 
- 
- 
-
-* Options/Questions
-  * Should all suspension points have the controller as a receiver?
-  * What signature does a callable reference `::await` have inside a coroutine? 
-    Should it have an explicit continuation parameter or have it bound implicitly?
-  
-  
+   
  
 * use cases
   * async/await
@@ -700,8 +687,8 @@ Let's say that for this example the calls to `await` are suspension points, this
 suspended when we need to read from a file, so that the read may not block the current thread, but execute asynchronously,
 and when it's done the coroutine can be resumed. Later it will suspend until each write is completed, and resume then.
 
-While this is not how we plan to implement coroutines, a useful mental model is related to teh _continuation passing style_
-or CPS. In this style, at every suspension point, the rest of the coroutine is passed as a callback to teh asynchronous 
+While this is not how we plan to implement coroutines, a useful mental model is related to the _continuation passing style_
+or CPS. In this style, at every suspension point, the rest of the coroutine is passed as a callback to the asynchronous 
 computations the coroutine runs:
    
 ``` kotlin

@@ -55,28 +55,34 @@ class Machine() : Coroutine<CompletableFutureContext<String>>,
     }
 
     private var label = 0
-    private fun machine(): Unit = when (label) {
-        0 -> {
-            if (_throwable != null) throw _throwable!!
-            println("got $v")
-            label = 1
-            context.await(foo(v), this)
+    private fun machine() {
+        try {
+            when (label) {
+                    0 -> {
+                        if (_throwable != null) throw _throwable!!
+                        println("got $v")
+                        label = 1
+                        context.await(foo(v), this)
+                    }
+                    1 -> {
+                        if (_throwable != null) throw _throwable!!
+                        x = _rv as String
+                        println("got $x")
+                        label = 2
+                        context.await(bar(x), this)
+                    }
+                    2 -> {
+                        if (_throwable != null) throw _throwable!!
+                        y = _rv as String
+                        println("got $y")
+                        label = -1
+                        context.complete(y, this)
+                    }
+                    else -> throw UnsupportedOperationException("Coroutine $this is in an invalid state")
+                }
+        } catch(e: Throwable) {
+            context.unhandledException(e, this)
         }
-        1 -> {
-            if (_throwable != null) throw _throwable!!
-            x = _rv as String
-            println("got $x")
-            label = 2
-            context.await(bar(x), this)
-        }
-        2 -> {
-            if (_throwable != null) throw _throwable!!
-            y = _rv as String
-            println("got $y")
-            label = -1
-            context.complete(y, this)
-        }
-        else -> throw UnsupportedOperationException("Coroutine $this is in an invalid state")
     }
 
 
@@ -108,5 +114,9 @@ class CompletableFutureContext<T> : CompletableFuture<T>() {
 
     fun complete(value: T, machine: Continuation<Nothing>) {
         complete(value)
+    }
+
+    fun unhandledException(t: Throwable, machine: Continuation<Nothing>) {
+        completeExceptionally(t)
     }
 }
