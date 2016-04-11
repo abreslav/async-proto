@@ -11,6 +11,7 @@
 **Yielding function**
 
 * unnecessary connotation with "yield"
+* suspending function?
 
 **State machine**
 

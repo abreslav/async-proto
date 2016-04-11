@@ -1,3 +1,8 @@
+Links:
+* C# new tasks https://github.com/dotnet/roslyn/issues/7169
+* Scala.react http://infoscience.epfl.ch/record/176887/files/DeprecatingObservers2012.pdf
+
+
 * How to implement passing the result of a suspending call back to the coroutine?
   * write to a field (one of two field in case we want to eliminate boxing: `Object` and `long`)
   * have a parameter on the main method of the state machine (two, to eliminate boxing), and assign to fields only 
@@ -54,3 +59,94 @@ Syntax
 * <inferFrom T>
   * <context T>
   * <unify T>
+  
+  
+--------------  
+Feature request: something like "async vals". Use case:
+  
+```
+asyncFutures {
+    val original = await(asyncLoadImage("...original...")) // creates a Future
+    val overlay = await(asyncLoadImage("...overlay..."))   // creates a Future
+    ...
+    return applyOverlay(orig, over)
+}
+```
+Problem: the `overlay` one isn't starting until the original one is done. We could say something like this:
+  
+```
+asyncFutures {
+    async val original = asyncLoadImage("...original...") // creates a Future
+    async val overlay = asyncLoadImage("...overlay...")   // creates a Future
+    ...
+    return applyOverlay(orig, over)
+}
+```  
+So that:
+- the compiler checks that `await` is applicable (how would it know it must be `await` and not some other function?)
+  - maybe say `await val` and use the name before the `val` as the name to look for?
+- the rhs is executed
+- the suspension and await call is not done until we use either of the variables
+  - i.e. we remember what `asynLoadImage` returned (future), and await it only on the first access
+  
+Same for functions:
+
+```
+async fun foo() = ...
+
+println(foo()) // await'ed automatically
+```
+
+
+Looks like this can be done in a library!
+
+```
+class Controller {
+    suspend fun <T> Future<T>.getValue(p: KProperty<*>): T = await(this)
+}
+
+asyncFutures {
+    val original by asyncLoadImage("...original...")
+    val overlay by asyncLoadImage("...overlay...")
+    ...
+    return applyOverlay(orig, over)
+}
+```
+--------   
+  
+  
+  * use cases
+    * async/await
+      * Promise
+    * generators
+      * yield/yieldAll
+    * ui
+      * show a modal dialog from outside the UI thread
+    * server
+      * register a user, validate email, log them it
+    * maybe
+      * return default value on an intermediate null    
+  * solution examples
+  * design aspects
+    * general concepts: controller, suspension point, type inference rules
+    * control over the state machine: nextStep, hasFinished, finally, local variables/deserialization, reset 
+    * syntax  
+    * exceptions
+      * altering the semantics of for loops
+    * concurrency guarantees
+    * constraints
+      * minimizing allocations
+      * compatibility with many frameworks
+      * type-safety of the library code
+      * unification of the code on different steps
+  * automata examples
+    * main principle: byte code transformation
+    * tricky parts
+      * loops
+      * exceptions
+      * finally
+      * stack spilling
+  * Proposal
+    * async vals: promise on the right, but no promise type
+    
+    
