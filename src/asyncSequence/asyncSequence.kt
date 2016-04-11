@@ -12,12 +12,9 @@ import java.util.concurrent.TimeUnit
 
 // === General ===
 
-// `Parameters` - tuple of the parameters for the coroutine
 // `Controller` - controller class
-// `Task` - the type of an object encapsulating the execution of the coroutine, returned by functions like `generate` or `async`
-interface Coroutine<Parameters, Controller, Task> {
-    fun start(parameters : Parameters)
-    val controller : Controller
+interface Coroutine<Controller> {
+    fun create(controller: Controller): Continuation<Unit>
 }
 
 interface Continuation<Argument> {
@@ -38,10 +35,10 @@ annotation class suspension
 // `Result` is the return type of the coroutine
 // The compiler provides a lambda of the form `{ AsyncStateMachine(it) }` to the `coroutine` parameter
 fun <Result> async(
-        @cofun coroutine : (AsyncController<Result>) -> Coroutine<Unit, AsyncController<Result>, CompletableFuture<Result>>)
+        @cofun coroutine : () -> Coroutine<AsyncController<Result>>)
         : CompletableFuture<Result> {
     val controller = AsyncController<Result>()
-    controller.machine = coroutine(controller)
+    controller.machine = coroutine()
 
     return CompletableFuture.supplyAsync {
         controller.start()
@@ -52,10 +49,10 @@ fun <Result> async(
 // a controller for an async coroutine
 class AsyncController<Result> {
     // must be initialized immediately upon the controller creation
-    lateinit var machine : Coroutine<Unit, AsyncController<Result>, CompletableFuture<Result>>
+    lateinit var machine : Coroutine<AsyncController<Result>>
 
     fun start() {
-        machine.start(Unit);
+        machine.create(this).run(Unit);
     }
     // TODO: add sync shortcut for completed tasks
     // TODO: handle cancellation
@@ -92,11 +89,11 @@ class AsyncController<Result> {
 // The type of the factory parameter (`GeneratorController<Element>` in this case is used to resolve
 // yielding invocations in the coroutine.
 fun <Element> generate(
-        @cofun coroutine: (GeneratorController<Element>) -> Coroutine<Unit, GeneratorController<Element>, Sequence<Element>>) =
+        @cofun coroutine: () -> Coroutine<GeneratorController<Element>>) =
         object : Sequence<Element> {
             override fun iterator(): Iterator<Element> {
                 val controller = GeneratorController<Element>()
-                controller.machine = coroutine(controller)
+                controller.machine = coroutine()
                 return IteratorTask(controller)
             }
         }
@@ -122,7 +119,7 @@ class GeneratorController<Element> {
     }
 
     // must be initialized immediately upon the controller creation
-    lateinit var machine : Coroutine<Unit, GeneratorController<Element>, Sequence<Element>>
+    lateinit var machine : Coroutine<GeneratorController<Element>>
 
     var state = State.READY
 
@@ -150,7 +147,7 @@ class GeneratorController<Element> {
     fun start() {
         assert(state == State.INITIAL)
         state = State.RUNNING
-        machine.start(Unit);
+        machine.create(this).run(Unit);
         assert(state == State.HAS_VALUE || state == State.STOPPED)
     }
 
@@ -234,11 +231,11 @@ interface AsyncSequence<T> {
 }
 
 fun <Element> asyncGenerate(
-        @cofun coroutine: (AsyncGeneratorController<Element>) -> Coroutine<Unit, AsyncGeneratorController<Element>, AsyncSequence<Element>>) =
+        @cofun coroutine: () -> Coroutine<AsyncGeneratorController<Element>>) =
         object : AsyncSequence<Element> {
             override fun iterator(): AsyncIterator<Element> {
                 val controller = AsyncGeneratorController<Element>()
-                controller.machine = coroutine(controller)
+                controller.machine = coroutine()
                 return AsyncIteratorTask(controller)
             }
         }
@@ -265,7 +262,7 @@ class AsyncGeneratorController<Element> {
     }
 
     // must be initialized immediately upon the controller creation
-    lateinit var machine : Coroutine<Unit, AsyncGeneratorController<Element>, AsyncSequence<Element>>
+    lateinit var machine : Coroutine<AsyncGeneratorController<Element>>
 
     var state = State.READY
 
@@ -302,7 +299,7 @@ class AsyncGeneratorController<Element> {
     fun start() {
         assert(state == State.INITIAL)
         state = State.RUNNING
-        machine.start(Unit);
+        machine.create(this).run(Unit);
         assert(state == State.HAS_VALUE || state == State.STOPPED)
     }
 
@@ -426,14 +423,14 @@ fun run(a : CompletableFuture<Int>, b : CompletableFuture<Int>) {
 // The compiler-generated transformation of `run`
 fun run(a : CompletableFuture<String>, b : CompletableFuture<Int>) {
     val future : Future<String> = `async` {
-        AsyncStateMachine(it).apply { closure = AsyncClosure(a = a, b = b) }
+        AsyncStateMachine().apply { closure = AsyncClosure(a = a, b = b) }
     }
 
     val result = future.get(10, TimeUnit.SECONDS)
     println(result)
 
     val sequence = generate<Int> {
-        GeneratorStateMachine(it).apply { closure = GeneratorClosure(n = 0) }
+        GeneratorStateMachine().apply { closure = GeneratorClosure(n = 0) }
     }
 
     val tmpIterator = sequence.iterator()
@@ -449,28 +446,21 @@ data class AsyncClosure(val a : CompletableFuture<String>, val b : CompletableFu
 
 
 // A compiler-generated state machine
-class AsyncStateMachine(
-        // the type of this property is derived from the `cofun` parameter type
-        override val controller: AsyncController<String>
-) : Coroutine<Unit, AsyncController<String>, CompletableFuture<String>> {
-
+class AsyncStateMachine() : Coroutine<AsyncController<String>>, Continuation<Any?> {
     // initialized by the compiler upon creation of the state machine
     lateinit var closure : AsyncClosure
+    lateinit var controller : AsyncController<String>
 
     private var state = 0
 
-    override fun start(parameters : Unit) {
-        step(null)
-    }
-
-    // The type argument `Any?` is erased and thus is not relevant, because this code is compiler-generated
-    private val continuation : Continuation<*> = object : Continuation<Any?> {
-        override fun run(value: Any?) = step(value)
+    override fun create(controller: AsyncController<String>): Continuation<Unit> {
+        this.controller = controller
+        return this as Continuation<Unit>
     }
 
     // compiler-generated from the coroutine body
     // the parameter `continuationParameter` represents the result of the last `await` expression and is cast to an appropriate type in each step
-    fun step(continuationParameter: Any?) {
+    override fun run(continuationParameter: Any?) {
         // Original source:
         // ```
         // println("start")
@@ -486,7 +476,7 @@ class AsyncStateMachine(
                 // `continuationParameter` is ignored for the first step, because the coroutine is parameterless
                 println("start")
                 this.state = 1
-                controller.await(this.closure.a, continuation as Continuation<String>) // a deliberate unchecked cast in compiler-generated code
+                controller.await(this.closure.a, this as Continuation<String>) // a deliberate unchecked cast in compiler-generated code
                 return
             }
 
@@ -495,7 +485,7 @@ class AsyncStateMachine(
                 val s = continuationParameter as String
                 println(s)
                 this.state = 2
-                controller.await(this.closure.b, continuation as Continuation<Int>)
+                controller.await(this.closure.b, this as Continuation<Int>)
                 return
             }
 
@@ -538,28 +528,23 @@ fun run() {
 
 // A compiler-generated state machine
 class GeneratorStateMachine(
-        // the type of this property is derived from the `cofun` parameter type: (GeneratorController<T>) -> StateMachine<Unit>
-        override val controller: GeneratorController<Int>
-) : Coroutine<Unit, GeneratorController<Int>, Sequence<Int>> {
-
+) : Coroutine<GeneratorController<Int>>, Continuation<Any?> {
     // initialized by the compiler upon creation of the state machine
     lateinit var closure : GeneratorClosure
 
+    lateinit var controller : GeneratorController<Int>
+
     private var state = 0
 
-    override fun start(parameters : Unit) {
-        step(null)
-    }
-
-    // The type argument `Any?` is erased and thus is not relevant, because this code is compiler-generated
-    private val continuation : Continuation<*> = object : Continuation<Any?> {
-        override fun run(value: Any?) = step(value)
+    override fun create(controller: GeneratorController<Int>): Continuation<Unit> {
+        this.controller = controller
+        return this as Continuation<Unit>
     }
 
     // compiler-generated from the coroutine body
     // the parameter `continuationParameter` represents the result of the last `yield` expression
     // and is always `Unit` in this type of coroutines
-    fun step(continuationParameter: Any?) {
+    override fun run(continuationParameter: Any?) {
         // Original code:
         // ```
         // println("start")
@@ -573,14 +558,14 @@ class GeneratorStateMachine(
             0 -> {
                 println("start")
                 this.state = 1
-                controller.`yield`(closure.n++, continuation as Continuation<Unit>)
+                controller.`yield`(closure.n++, this as Continuation<Unit>)
                 return;
             }
 
             1 -> {
                 println("between")
                 this.state = 2
-                controller.`yield`(closure.n, continuation as Continuation<Unit>)
+                controller.`yield`(closure.n, this as Continuation<Unit>)
                 return;
 
             }
