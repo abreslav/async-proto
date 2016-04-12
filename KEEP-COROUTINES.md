@@ -1,4 +1,4 @@
-# KEEP-COROUTINES. Coroutines for Kotlin
+# KEEP-COFUN. Coroutines for Kotlin
 
 Document type: Language Design Proposal
 Document authors: Andrey Breslav, Vladimir Reshetnikov
@@ -254,7 +254,7 @@ class <anonymous_for_state_machine> {
     A a = null
     Y y = null
     
-    void main(Object data) {
+    void resume(Object data) {
         if (label == 0) goto L0
         if (label == 1) goto L1
         if (label == 2) goto L2
@@ -287,9 +287,9 @@ Note that:
  * exception handling and some other details are omitted here for brevity,
  * there's a `goto` operator and labels, because the example depicts what happens in the byte code, not the source code.
 
-Now, when the coroutine is started, we call its `main()`: `label` is `0`, and we jump to `L0`, then we do some work, 
+Now, when the coroutine is started, we call its `resume()`: `label` is `0`, and we jump to `L0`, then we do some work, 
 set the `label` to the next state — `1` and return (which is — suspend the execution of the coroutine). 
-When we want to continue the execution, we call `main()` again, and now it proceeds right to `L1`, does some work, sets
+When we want to continue the execution, we call `resume()` again, and now it proceeds right to `L1`, does some work, sets
 the state to `2`, and suspends again. Next time it continues from `L3` setting the state to `-1` which means "over, 
 no more work to do". The details about how the `data` parameter works are given below.
 
@@ -312,7 +312,7 @@ class <anonymous_for_state_machine> : Coroutine<...> {
     // local variables of the coroutine
     int x
     
-    void main(Object data) {
+    void resume(Object data) {
         if (label == 0) goto L0
         if (label == 1) goto L1
         else throw IllegalStateException()
@@ -336,7 +336,7 @@ class <anonymous_for_state_machine> : Coroutine<...> {
 }    
 ```  
 
-Note: boxing can be eliminated here, through having another parameter to `main()`, but we are not getting into these details.
+Note: boxing can be eliminated here, through having another parameter to `resume()`, but we are not getting into these details.
 
 ## The building blocks
 
@@ -350,7 +350,7 @@ NOTE: all names, APIs and syntactic constructs described below are subject to di
 
 ### Coroutine builders
 
-_Coroutine builders_ are functions that take state machines and turn them into some useful objects like Futures, 
+_Coroutine builders_ are functions that take coroutines and turn them into some useful objects like Futures, 
 Observables, lazy Sequences etc:
    
 ```
@@ -361,36 +361,64 @@ val f: Future<T> = asyncExample {
 
 Here, `asyncExample` is a function that receives a block which is a body of a coroutine ("colambda") as an argument. 
 Under the hoods this block is translated into a state machine, and the parameter type for `asyncExample` is not 
-a function type (e.g. `() -> Unit`), but an interface `Coroutine` that exposes functions to initialize the coroutine, 
-start its execution, etc:
+a function type (e.g. `() -> Unit`), but a coroutine type `() -> Coroutine<...>` that exposes functions to initialize the coroutine, start its execution, etc:
  
 ```
-fun <T> asyncExample(coroutine: Coroutine<...>): Future<T> { ... }
+fun <T> asyncExample(coroutine c: () -> Coroutine<FutureController<T>>): Future<T> { 
+    ...
+}
 ```
 
-The job of `asyncExample` is to wrap the coroutine into a `Future` object (those who are into GoF design patterns may say
- that it's an "Adaptor Factory Method"): for example, it may create a promise (`CompletableFuture`) and set a completion
- handler on the coroutine to fulfill it (i.e. call `CompletableFuture.complete()`). 
- 
-This essentially proposes a change to the language syntax: previously, when we saw a lambda expression, we 
-expected the type of it (e.g. a type of a parameter it is passed for or a property/variable it is assigned to) to be a
-function type, e.g. `(Int) -> String`, but now it can also be a `Coroutine<...>`. So this interface is a special
-type in the sense that the compiler knows about it and transforms the lambdas passed to such parameters to state machines.
+The job of `asyncExample` is to turn the coroutine into a `Future` object: for example, it may create a promise (`CompletableFuture`) and set a _result handler_ on the coroutine to fulfill it (i.e. call `CompletableFuture.complete()`).
 
-* It is open to discussion whether we should have a special syntax for `Coroutine` (like we have for function types), or
-  leave them is the generic form.
+This essentially proposes a change to the language syntax: to tell the compiler that `() -> Coroutine<...>` is not a function that returns an instance of the `Coroutine` interface, but something to be treated specially and transformed to a state machine.
+
+* The concrete syntax is up to discussion: we could keep the modifier `coroutine`, or opt for something else.
  
-NOTE: Technically, one could implement the `Coroutine` interface and pass a custom implementation to `asyncExample`, in the 
-same manner as it can be done with functions. And, of course, a function that takes a `Coroutine` doesn't have to really
-build anything, so _coroutine builder_ is not a syntactical property, or kind of functions the language knows about, but
-simply a coding pattern.
+Here's the `Coroutine` interface:
+ 
+``` kotlin
+interface Coroutine<C> {
+    fun create(controller: C): Continuation<Unit>
+}
+
+interface Continuation<P> {
+    fun resume(data: P)
+    fun resumeWithException(exception: Throwable)
+}
+```
+ 
+Here's a possible implementation of `asyncExample()`: 
+ 
+```
+fun <T> asyncExample(coroutine c: () -> Coroutine<FutureController<T>>): Future<T> { 
+    // get an instance of the coroutine
+    val coroutine = c() 
+    
+    // controllers will be discussed below
+    val controller = FutureController<T>()
+     
+    // to start the execution of the coroutine, obtain its fist continuation
+    // it does not take any parameters, so we pass Unit there
+    val firstContinuation = coroutine.create(controller)
+    firstContinuation.resume(Unit)
+    
+    // return the Future object that is created internally by the controller
+    return controller.future
+}    
+``` 
+ 
+NOTE: Technically, one could implement the `Coroutine` interface and pass a lambda returning that custom implementation to `asyncExample`. And, of course, a function that takes a `Coroutine` doesn't have to really build anything, so _coroutine builder_ is not a syntactical property, or kind of functions the language knows about, but simply a coding pattern.
+
+NOTE: To allocate fewer objects, we can make the state machine itself implement `Continuation`, so that its `resume` is the main method of the state machine. In fact, the initial lambda passed to the coroutine builder, `() -> Coroutine<...>` can be also implemented by the same state machine object.  
+
  
 ### Suspension points
 
 To recap: a _suspension point_ is an expression in the body of a coroutine which cause the coroutine's execution to
 suspend until it's explicitly resumed by someone.
   
-An example of a suspension point is `await()`, that takes an asynchronous computation (e.g. a `CompletableFuture`) and
+An example of a suspension point is a call to the `await()` function, that takes an asynchronous computation (e.g. a `CompletableFuture`) and
 suspends until it's completed. Technically, it could subscribe for completion of the Future with a handler that resumes
 the coroutine when called. In fact, it needs to do a bit more, because there's the result computed by the Future, which
 needs to be put back "into" the coroutine:
@@ -410,53 +438,33 @@ L0:
   await(foo, this)
   return
 L1:
-  println(x)
+  println(data as Foo) // the value for `x` is passed back as `data`
+  label = -1
   return
 ```
 
-The code after `L1` assumes that someone has already written a value computed by `foo` into `x` (which is a field in the
-anonymous class of the state machine). The way it works is roughly as follows:
+The code after `L1` assumes that someone has passed a value computed by `foo` into the `data` parameter. 
+The way it works is roughly as follows:
  
 ```
-fun <T> await(f: CompletableFuture<T>, continuation c: Continuation<T, ...>) {
-    f.whenComplete { t, throwable ->
+suspension fun <T> await(f: CompletableFuture<T>, c: Continuation<T>) {
+    f.whenComplete { result, throwable ->
         if (throwable != null) 
-            c.runWithException(throwable)
+            c.resumeWithException(throwable)
         else          
-            c.run(t)
+            c.resume(result)
     }
 }
 ``` 
 
-Here, we have another new piece of syntax: the `continuation` modifier on the second parameter `c` (that is not passed
-explicitly to `await()` in the code); and a new interface: `Continuation` that can either run with a given value, or
-run with exception (we'll not delve into the exception handling just yet, although it's a very important and interesting 
-topic). The `T` type-argument of a continuation is the type that `await` "returns" in the coroutine. Since the result is 
-received asynchronously, it can not be returned directly from await, and is passed to the continuation as an argument to
-`run`.
+Here, we have another new piece of syntax: the `suspension` modifier on the function. The parameter `c` of type `Continuation` is not passed explicitly to `await()` in the code of the coroutine, the compiler supplies this parameter automatically. It implements the `Continuation` interface that can either resume the coroutine with a given value, or with exception (we'll not delve into the exception handling just yet, although it's a very important and interesting topic). The `T` type-argument of a continuation is the type that `await` "returns" in the coroutine. Since the result is received asynchronously, it can not be returned directly from `await`, and is passed to the continuation as an argument to `resume` (that same `data` we have seen above).
 
 So, a suspension point is a function call with an implicit continuation parameter. Such functions can be called in this
  form only inside coroutines. Elsewhere they may be called only with both parameters passed explicitly.
   
 NOTE: some may argue that it's better to make suspension points more visible at the call sites, e.g. prefix them with
   some keyword or symbol: `#await(foo)` or `suspend await(foo)`, or something. These options are all open for discussion.
-
-But where does the implementation of `Continuation` come from, and what is its `run` function actually doing? 
-The `run` function does two things: 
-
-- runs the state machine's `main()` so that it proceeds with the execution of the coroutine, 
-- passes a value of the local variable `x` to it (the cheapest way of implementing this is 
-  through a parameter passed to `main()`).
  
-NOTE: even if the result of `await()` is not assigned to a variable in the code of the coroutine, such a variable may be
- created by the compiler, or some other mechanism of putting a value into the coroutine through a field may be employed 
- (e.g. we could use one field for all suspension point results, or have one field for reference-typed results and another
- for primitives to avoid boxing, because any primitive can be encoded as a `Long`).
- 
-To achieve this, the compiler needs to either generate a new class that implements `Continuation` and has the appropriate
- `run` function implementation, or make the state machine itself implement `Continuation`, which would mean fewer classes
- and allocations, and thus is the option we'd prefer.   
-
 ### Controllers
 
 The model presented above is rather flexible: anyone can declare a coroutine builder or a suspension point independently.

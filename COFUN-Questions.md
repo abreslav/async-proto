@@ -2,6 +2,7 @@ Links:
 * C# new tasks https://github.com/dotnet/roslyn/issues/7169
 * Scala.react http://infoscience.epfl.ch/record/176887/files/DeprecatingObservers2012.pdf
 
+* How to avoid boxing with Continuation.resume(T)
 
 * How to implement passing the result of a suspending call back to the coroutine?
   * write to a field (one of two field in case we want to eliminate boxing: `Object` and `long`)
@@ -50,9 +51,15 @@ API Naming
 * State machine class in the byte code
   * the method containig the state machine code: `main`, `invoke`, `machine`, `run`/`resume`/`step` like in Continuation 
   * the `label`
+* handlers: completion/result or exception
 
 Syntax
 
+* Coroutine builder
+  * modifier on the parameter: `coroutine c: () -> Coroutine<...>`
+  * special type syntax: `c: () => Controller` or other
+  * modifier on the function?
+  * call-site distinction?
 * Suspension point
   * simply `yield(foo)`
   * designated: `$yield(foo)`, `^await(foo)`, `suspend yield(foo)` etc
