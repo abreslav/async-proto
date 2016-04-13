@@ -46,6 +46,7 @@ Cancellation of futures
 API Naming
 
 * Coroutine interface
+  * the "create" function: entryPoint? firstStep?
 * Continuation interface
   * run/resume/step
 * State machine class in the byte code
@@ -63,6 +64,8 @@ Syntax
 * Suspension point
   * simply `yield(foo)`
   * designated: `$yield(foo)`, `^await(foo)`, `suspend yield(foo)` etc
+* Suspending function
+  * `suspend` modifier?
 * <inferFrom T>
   * <context T>
   * <unify T>
