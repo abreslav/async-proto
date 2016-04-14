@@ -655,5 +655,6 @@ In case of a suspending function mentioning type parameters of the controller cl
 
 > A typical example of this is generators, where the `generate` function has a type-parameter `T` and returns `Sequence<T>`, and this `T` is determined based on what values calls to `yield()` take in the body of the coroutine.  
 
-## Complete code examples
+## Code examples
  
+See this repo: [https://github.com/abreslav/kotlin-coroutines-examples](https://github.com/abreslav/kotlin-coroutines-examples). 
