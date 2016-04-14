@@ -1,7 +1,6 @@
 package noController.`yield`.simplified
 
-import noController.api.Continuation
-import noController.api.Coroutine
+import noController.api.*
 
 // TEST CODE
 
@@ -25,7 +24,7 @@ fun main(args: Array<String>) {
 
 // LIBRARY CODE
 
-fun <T> generate(c: () -> Coroutine<GeneratorController<T>>): Sequence<T> = object : Sequence<T> {
+fun <T> generate(@coroutine c: () -> Coroutine<GeneratorController<T>>): Sequence<T> = object : Sequence<T> {
     override fun iterator(): Iterator<T> {
         val iterator = GeneratorController<T>()
         iterator.setNextStep(c().entryPoint(iterator))
@@ -44,13 +43,13 @@ class GeneratorController<T>() : AbstractIterator<T>() {
         this.nextStep = step
     }
 
-    // suspend
-    fun yieldValue(value: T, c: Continuation<Unit>) {
+
+    @suspend fun yieldValue(value: T, c: Continuation<Unit>) {
         setNext(value)
         setNextStep(c)
     }
 
-    fun handleResult(result: Unit, c: Continuation<Nothing>) {
+    @operator fun handleResult(result: Unit, c: Continuation<Nothing>) {
         done()
     }
 }

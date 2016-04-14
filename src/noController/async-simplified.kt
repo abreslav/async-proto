@@ -1,7 +1,6 @@
 package noController.asyncNoCopying
 
-import noController.api.Continuation
-import noController.api.Coroutine
+import noController.api.*
 import java.util.concurrent.CompletableFuture
 
 // TEST CODE
@@ -30,7 +29,7 @@ fun main(args: Array<String>) {
 
 // LIBRARY CODE
 
-fun <T> async(c: () -> Coroutine<FutureController<T>>): CompletableFuture<T> {
+fun <T> async(@coroutine c: () -> Coroutine<FutureController<T>>): CompletableFuture<T> {
     val controller = FutureController<T>()
     c().entryPoint(controller).resume(Unit)
     return controller.future
@@ -39,7 +38,7 @@ fun <T> async(c: () -> Coroutine<FutureController<T>>): CompletableFuture<T> {
 class FutureController<T> {
     val future = CompletableFuture<T>()
 
-    fun <V> await(future: CompletableFuture<V>, machine: Continuation<V>) {
+    @suspend fun <V> await(future: CompletableFuture<V>, machine: Continuation<V>) {
         future.whenComplete { value, throwable ->
             if (throwable == null)
                 machine.resume(value)
@@ -48,11 +47,11 @@ class FutureController<T> {
         }
     }
 
-    fun handleResult(value: T, c: Continuation<Nothing>) {
+    @operator fun handleResult(value: T, c: Continuation<Nothing>) {
         future.complete(value)
     }
 
-    fun handleException(t: Throwable, c: Continuation<Nothing>) {
+    @operator fun handleException(t: Throwable, c: Continuation<Nothing>) {
         future.completeExceptionally(t)
     }
 }
