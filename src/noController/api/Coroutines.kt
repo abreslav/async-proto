@@ -1,13 +1,13 @@
 package noController.api
 
-interface Coroutine<in Ctx> {
-    fun create(context: Ctx): Continuation<Unit>
+interface Coroutine<in C> {
+    fun entryPoint(controller: C): Continuation<Unit>
 }
 
 interface Continuation<in P> {
-    fun resume(parameter: P)
+    fun resume(data: P)
 
-    fun resumeAndThrow(throwable: Throwable)
+    fun resumeWithException(exception: Throwable)
 }
 
 

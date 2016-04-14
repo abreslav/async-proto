@@ -12,73 +12,80 @@ We propose to add coroutines to Kotlin. This concept is also known as or partly 
 
 - generators/yield
 - async/await
-- (delimited or stackless) continuations 
+- (delimited or stackless) continuations
+ 
+It is an explicit goal of this proposal to make it possible to utilize Kotlin coroutines as wrappers for different existing asynchronous APIs (such as Java NIO, different implementations of Futures, etc).  
 
 ## Use cases
 
-Coroutine can be thought of as a _suspendable computation_, the one that can suspend at some points and later continue 
-(possibly on another thread). Coroutines calling each other (and passing data back and forth) can form the machinery for 
-cooperative multitasking, but this is not exactly the driving use case for us.
+A coroutine can be thought of as a _suspendable computation_, i.e. the one that can suspend at some points and later continue (possibly on another thread). Coroutines calling each other (and passing data back and forth) can form the machinery for cooperative multitasking, but this is not exactly the driving use case for us.
  
 ### Asynchronous computations 
  
-First motivating use case for coroutines is asynchronous computations (handled by async/await in C# and other languages). 
-Let's take a look at how such computations are done with callbacks. As an inspiration, let's take 
-asynchronous I/O (the APIs below are simplified, to make examples shorter, we use named arguments to make the code more
-self-explanatory):
+First motivating use case for coroutines is asynchronous computations (handled by async/await in C# and other languages). Let's take a look at how such computations are done with callbacks. As an inspiration, let's take 
+asynchronous I/O (the APIs below are simplified):
 
 ```
-inFile.read(into = buf, whenDone = {
+// asynchronously read into `buf`, and when done run the lambda
+inFile.read(buf) {
+    // this lambda is executed when the reading completes
     bytesRead ->
     ...
     ...
     val newData = process(buf, bytesRead)
-    outFile.write(from = buf, whenDone = {
+    
+    // asynchronously write from `buf`, and when done run the lambda
+    outFile.write(buf) {
+        // this lambda is executed when the writing completes
         ...
         ...
         outFile.close()          
-    })
-})
+    }
+}
 ```
 
 Note that we have a callback inside a callback here, and while it saves us from a lot of boilerplate (e.g. there's no 
 need to pass the `buf` parameter explicitly to callbacks, they just see it as part of their closure), the indentation
-levels are growing every time, and one can easily anticipate the problems that may come at nesting levels greater than one 
-(google for "callback hell" to see how much people suffer from this in current JavaScript, where they have no choice 
-other than use callback-based APIs).
+levels are growing every time, and one can easily anticipate the problems that may come at nesting levels greater than one (google for "callback hell" to see how much people suffer from this in current JavaScript, where they have no choice other than use callback-based APIs).
 
 This same computation can be expressed straightforwardly as a coroutine (provided that there's a library that adapts
  the I/O APIs to coroutine requirements):
  
 ```
 asyncIO {
-    val bytesRead = inFile.read(into = buf) // suspension point
+    // suspend while asynchronously reading
+    val bytesRead = inFile.read(buf) 
+    // we only get to this line when reading completes
     ...
     ...
     val newData = process(buf, bytesRead)
-    outFile.write(from = buf) // suspension point
+    // suspend while asynchronously writing   
+    outFile.write(buf)
+    // we only get to this line when writing completes  
     ...
     ...
     outFile.close()
 }
 ```
 
-If we assume that every _suspension point_ (such points are to be statically determined at compile time) implicitly
-receives as an argument a callback enclosing the entire _continuation_ of the `asyncIO` coroutine, we can see that this is 
-the same code as above, but written in a more readable way. NOTE: passing continuation lambdas around is not exactly 
-how we are proposing to implement coroutines, it's just a useful mental model. 
+The calls to `read()` and `write()` here are treated specially by the coroutine: it suspends at such a call (which does not mean blocking the thread it's been running on) and resumes when the call has completed. If we squint our eyes just enough to imagine that all the code after `read()` has been wrapped in a lambda and passed to `read()` as a callback, and the same has been done for `write()`, we can see that this code is the same as above, only more readable. (Making such lambdas efficient is important, and we describe it below.)  
 
-Note that in the callback-passing style having an asynchronous call in the middle of a loop can be tricky, and in a
-coroutine a suspension point in a loop is a perfectly normal thing to have:
+It's our explicit goal to support coroutines in a very generic way, so in this example, `asyncIO {}`, `File.read()` and `File.write()` are just **library functions** geared for working with coroutines (details below): `asyncIO` marks the scope of a coroutine and controls its behavior, and `read/write` are recognized as special _suspending functions_, for they suspend the computation and implicitly receive continuations.  
+
+Note that with explicitly passed callbacks having an asynchronous call in the middle of a loop can be tricky, but in a coroutine it is a perfectly normal thing to have:
 
 ```
 asyncIO {
     while (true) {
-        val bytesRead = inFile.read(into = buf) // suspension point
+        // suspend while asynchronously reading
+        val bytesRead = inFile.read(buf)
+        // continue when the reading is done
         if (bytesRead == -1) break
         ...
         val newData = process(buf, bytesRead)
-        outFile.write(from = buf) // suspension point
+        // suspend while asynchronously writing
+        outFile.write(buf) 
+        // continue when the writing is done
         ...
     }
 }
@@ -101,19 +108,20 @@ val future = runAfterBoth(
 return future.get()
 ```
 
-This could be rewritten as
+With coroutines, this could be rewritten as
 
 ```
 asyncFutures {
     val original = asyncLoadImage("...original...") // creates a Future
     val overlay = asyncLoadImage("...overlay...")   // creates a Future
     ...
+    // suspend while awaiting the loading of the images
+    // then run `applyOverlay(...)` when they are both loaded
     return applyOverlay(await(original), await(overlay))
 }
 ```
 
-Again, less indentation and more natural composition logic (and exception handling, not shown here). For more complex
-logic the difference between the coroutine code and futures-based code becomes much more dramatic.
+Again, less indentation and more natural composition logic (and exception handling, not shown here), and no building async/await into teh language: `asyncFuture {}` and `await()` are functions in a library. 
 
 > With the help of _delegated properties_, the example above may be simplified even further:
 ```
@@ -121,7 +129,7 @@ asyncFutures {
     val original by asyncLoadImage("...original...")
     val overlay by asyncLoadImage("...overlay...")
     ...
-    // access to the properties (i.e. the getValue() function) is a suspension point,
+    // access to the properties (i.e. the getValue()) can be defined as a suspending function,
     // so there's no need for explicit await()
     return applyOverlay(original, overlay)
 }
@@ -129,18 +137,18 @@ asyncFutures {
 
 ### Generators
 
-Another typical use case for coroutines would be lazily computed sequences of values (handled by `yield` in C#, Python 
+Another typical use case for coroutines would be lazily computed sequences (handled by `yield` in C#, Python 
 and many other languages):
  
 ```
 val seq = input.filter { it.isValid() }.map { it.toFoo() }.filter { it.isGood() }
 ```
 
-This style of expressing (lazy) collection filtering/mapping is often acceptable, but has its drawbacks:
+This style of expressing (lazy) filtering/mapping is often acceptable, but has its drawbacks:
 
- - `it` is not always fine for a name, and a meaningful name has to be repeated in each lambda
- - multiple intermediate objects created
- - non-trivial control flow and exception handling are a challenge
+ - `it` is not always fine for a name, and a meaningful name has to be repeated in each lambda,
+ - multiple intermediate objects created,
+ - non-trivial control flow and exception handling are a challenge.
  
 As a coroutine, this becomes close to a "comprehension":
  
@@ -149,18 +157,18 @@ val seq = input.transform {
     if (it.isValid()) {      // "filter"
         val foo = it.toFoo() // "map"
         if (foo.isGood()) {  // "filter"
-            yield(foo) // suspension point        
+            // suspend until the consumer of the sequence calls iterator.next()
+            yield(foo)         
         }                
     }
 } 
 ```
 
-This form may look more verbose in this case, but if we add some more code in between the operations, or some non-trivial
-control flow, it has invaluable benefits:
+This form may look more verbose in this case, but if we add some more code in between the operations, or some non-trivial control flow, it has invaluable benefits:
 
 ```
 val seq = transform {
-    yield(firstItem)
+    yield(firstItem) // suspension point
 
     for (item in input) {
         if (!it.isValid()) break // don't generate any more items
@@ -178,29 +186,29 @@ val seq = transform {
 } 
 ```
 
-This approach also allows to express `yieldAll(sequence)`, which simplifies joining lazy sequences and allows for 
-efficient implementation (a naïve one is quadratic in the depth of the joins).  
+This approach also allows to express `yieldAll(sequence)` as a library functions (as well as `generate {}` and `yeild()` are), which simplifies joining lazy sequences and allows for efficient implementation (a naïve one is quadratic in the depth of the joins).  
 
-Some other use cases:
+### More use cases
  
-* UI logic involving off-loading long tasks from the event thread
-* Background processes occasionally requiring user interaction, e.g., show a modal dialog
-* Communication protocols: implement each actor as a sequence rather than a state machine
-* Web application workflows: register a user, validate email, log them in (a suspended coroutine may be serialized and stored in a DB)
-   
-
-
-
+Coroutines can cover many more use cases, including these:  
+ 
+* Channel-based concurrency (aka goroutines and channels);
+* UI logic involving off-loading long tasks from the event thread;
+* Background processes occasionally requiring user interaction, e.g., show a modal dialog;
+* Communication protocols: implement each actor as a sequence rather than a state machine;
+* Web application workflows: register a user, validate email, log them in (a suspended coroutine may be serialized and stored in a DB).
 
 ## Coroutines overview
 
-This section gives a brid's-eye view of the proposed language mechanisms that enable writing coroutines and libraries that govern their semantics.  
+This section gives a bird's-eye view of the proposed language mechanisms that enable writing coroutines and libraries that govern their semantics.  
+
+NOTE: all names, APIs and syntactic constructs described below are subject to discussion and possible change.
 
 ### Terminology
 
-* A _coroutine_ -- a block of code (possibly, parameterized) whose execution can be suspended and resumed potentially multiple times (possibly, at several different points), yielding the control to its caller. [Note: The wording "potentially multiple times" should be understood as "zero, one or more times". While it is rarely useful, a coroutine can we written in a way such that it is never suspended at all. End note]. 
+* A _coroutine_ -- a block of code (possibly, parameterized) whose execution can be suspended and resumed potentially multiple times (possibly, at several different points), yielding the control to its caller.
 
-Syntactically, a coroutine looks exactly as a function literal `{ x, y -> ... }`. A coroutine is distinguished by the compiler from a function literal based on the special type context in which it occurs. A coroutine is typechecked using different rules it in a different way than a regular function literal.
+Syntactically, a coroutine looks exactly as a function literal `{ x, y -> ... }`. A coroutine is distinguished by the compiler from a function literal based on the special type context in which it occurs. A coroutine is typechecked using different rules and in a different way than a regular function literal.
  
 > Note: Some languages with coroutine support allow coroutines to take forms both of an anonymous function and of a method body. Kotlin supports only one syntactic flavor of coroutines, resembling function literals. In case where a coroutine in the form of a method body would be used in another language, in Kotlin such method would typically be a regular method with an expression body, consisting of an invocation expression whose last argument is a coroutine: 
  ```
@@ -218,11 +226,12 @@ generate {
     println("over")
 }  
 ```  
+
 Here, every time the coroutine is suspended at a call to `yield()`, _the rest of its execution_ is represented as a continuation, so we create 10 continuations: first runs the loop with `i = 2` and suspends, second runs the loop with `i = 3` and suspends, etc, the last one prints "over" and exits the coroutine. 
 
 ### Implementation through state machines
 
-As mentioned above, implementing continuations in coroutines as lambdas makes certain scenarios (suspending in a loop, handling exceptions, etc) difficult. This is why many languages implement them through _state machines_.  
+It's crucial to implement continations efficiently, i.e. create as few classes and objects as possible. Many languages implement them through _state machines_, and in the case of Kotlin this approach results in the compiler creating only one class and one instance per coroutine.   
  
 Main idea: a coroutine is compiled to a state machine, where states correspond to suspension points. Example: let's take a coroutine with two suspension points:
  
@@ -242,8 +251,7 @@ For this coroutine there are three states:
  
 Every state is an entry point to one of the continuations of this coroutine (the first continuation "continues" from the very first line). 
  
-The code is compiled to an anonymous class that has a method implementing the state machine, a field holding the current
- state of the state machine, and fields for local variables of the coroutines that are shared between states. Here's pseudo-bytecode for the coroutine above: 
+The code is compiled to an anonymous class that has a method implementing the state machine, a field holding the current state of the state machine, and fields for local variables of the coroutines that are shared between states (there may also be fields for the closure of the coroutine, but in this case it's empty). Here's pseudo-bytecode for the coroutine above: 
   
 ```
 class <anonymous_for_state_machine> {
@@ -340,15 +348,13 @@ Note: boxing can be eliminated here, through having another parameter to `resume
 
 ## The building blocks
 
-One of the driving requirements for this proposal is flexibility: we want to be able to support many existing asynchronous APIs and other use cases (unlike, for example, C#, where async/await and generators are tied up to Task and IEnumerable) and minimize the parts hard-coded into the compiler.
+As mentioned above, one of the driving requirements for this proposal is flexibility: we want to be able to support many existing asynchronous APIs and other use cases and minimize the parts hard-coded into the compiler.
   
 As a result, the compiler is only responsible for transforming coroutine code into a state machine, and the rest is left to libraries. We provide more or less direct access to the state machine, and introduce building blocks that frameworks and libraries can use: _coroutine builders_, _suspending functions_ and _controllers_.
 
-NOTE: all names, APIs and syntactic constructs described below are subject to discussion and possible change.
-
 ### A lifecycle of a coroutine
 
-As mentioned above, the compiler doesn't do much more than creating a state machine, so the rest of the coroutine lifecycle is customizable. The coroutine object that encapsulates the state machine (or rather a factory capable of creating those objects) is passed to a function such as `async {}` or `generator {}` from above, we call these functions _coroutine builders_. The builder function's biggest responsibility is to define a _controller_ for the coroutine. Controller is an object that determines which suspension functions are available inside the coroutine, how the return value of the coroutine is process, and how exceptions are handled. 
+So, the only thing that happens "magically" is the creation of a state machine. The coroutine object that encapsulates the state machine (or rather a factory capable of creating those objects) is passed to a function such as `async {}` or `generator {}` from above; we call these functions _coroutine builders_. The builder function's biggest responsibility is to define a _controller_ for the coroutine. Controller is an object that determines which suspension functions are available inside the coroutine, how the return value of the coroutine is processed, and how exceptions are handled. 
 
 Normally, a builder function creates a controller, passes it to a factory to obtain a working instance of the coroutine, and returns some useful object: Future, Sequence, AsyncTask or alike. The returned object is the public API for the coroutine whose inner workings are governed by the controller.
     
@@ -406,13 +412,13 @@ The purpose of the controller is to govern the semantics of the coroutine. A con
 - handlers for coroutine return values,
 - exception handlers for exceptions thrown inside the coroutine.
 
-Typically, all suspending functions and handlers will be members of the controller. We may need to allow extensions to the controller as suspending functions, but this should be through an opt-in mechanism, because many implementations would break should any unanticipated suspension points occur in a coroutine (for example, if an `async()` call happens unexpectedly among `yield()` calls in a basic generator, iteration will end up stuck leading to undesired behavior).
+Typically, all suspending functions and handlers will be members of the controller. We may need to allow extensions to the controller as suspending functions, but this should be through an opt-in mechanism, because many implementations would break if any unanticipated suspension points occur in a coroutine (for example, if an `async()` call happens unexpectedly among `yield()` calls in a basic generator, iteration will end up stuck leading to undesired behavior).
 
-It is language rule that suspending functions (and probably other specially designated members of the controller) are available in the body of a coroutine without qualification. In this sense, a controller acts similarly to an [implicit receiver](https://kotlinlang.org/docs/reference/extensions.html#declaring-extensions-as-members), only it exposes only some rather than all of its members.      
+It is a language rule that suspending functions (and probably other specially designated members of the controller) are available in the body of a coroutine without qualification. In this sense, a controller acts similarly to an [implicit receiver](https://kotlinlang.org/docs/reference/extensions.html#declaring-extensions-as-members), only it exposes only some rather than all of its members.      
 
 ### Suspending functions
 
-To recap: a _suspension point_ is an expression in the body of a coroutine which cause the coroutine's execution to
+To recap: a _suspension point_ is an expression in the body of a coroutine which causes the coroutine's execution to
 suspend until it's explicitly resumed by someone. Suspension points are calls to specially marked functions called _suspending functions_. 
 
 A suspending function looks something like this:
@@ -432,9 +438,9 @@ suspend fun <T> await(f: CompletableFuture<T>, c: Continuation<T>) {
 
 The `suspend` modifier indicates that this function is special, and its calls are suspension points that correspond to states of a state machine. 
 
-When `await(f)` is called in the body of the coroutine, the second parameter (a continuation) is not passed explicitly, but is injected by the compiler. All the user sees is a call, but in fact after the call to `await()` completes, the coroutine is suspended and the control is transferred to its caller. The execution of the coroutine is resumed only when the future `f` is completed, and `resume()` is called on the continuation `c`.
+When `await(f)` is called in the body of the coroutine, the second parameter (a continuation) is not passed explicitly, but is injected by the compiler. After `await()` returns, the coroutine is suspended and the control is transferred to its caller. The execution of the coroutine is resumed only when the future `f` is completed, and `resume()` is called on the continuation `c` (as per the handler registered with the `CompletableFuture` object).
  
-The value passed to `resume()` is the **return value** of the `await()`. Since this value will only be known when the future is completed, `await()` can not return it right away, and the return type in _any_ suspending function declaration is always `Unit`. When the coroutine is resumed, the result of the last suspending call is passed as a parameter to the `resume()` of the continuation. (This is why the `entryPoint()` gives a `Continuation<Unit>` — there's no call to return a result for, so we simply pass a placeholder object.)  
+The value passed to `resume()` acts as the **return value** of `await()` calls in the body of the coroutine. Since this value will only be known when the future is completed, `await()` can not return it right away, and the return type in _any_ suspending function declaration is always `Unit`. When the coroutine is resumed, the result of the last suspending call is passed as a parameter to the `resume()` of the continuation. (This is why the `entryPoint()` gives a `Continuation<Unit>` — there's no call to return a result for, so we simply pass a placeholder object.)  
 
 Consider this example of a coroutine:
  
@@ -450,7 +456,7 @@ Here's the state machine code generated for it:
 ```
 void resume(Object data) { 
     if (label == 0) goto L0
-    else if (label == 1) goto L1
+    if (label == 1) goto L1
     else throw IllegalStateException()
      
     L0:
@@ -479,7 +485,7 @@ NOTE: some may argue that it's better to make suspension points more visible at 
   
 ### Result handlers
 
-A coroutine body looks like a regular lambda in the code and, like a lambda, it may have parameters and return a value. Handling parameters is covered above, and the returned values are passed to a designated function (or functions) in the controller:
+A coroutine body looks like a regular lambda in the code and, like a lambda, it may have parameters and return a value. Handling parameters is covered above, and returned values are passed to a designated function (or functions) in the controller:
  
 ```
 class FutureController<T> {
@@ -518,22 +524,23 @@ operator fun handleException(e: Throwable, c: Continuation<Nothing>) {
 }
 ```
 
-This handler is called when an unhandled exception occurs in the coroutine (the coroutine itself becomes invalid then and can not be continued). Technically, it is implemented by wrapping the whole body of the coroutine (the whole state machine) into a try/catch block whose catch calls the handler:
+This handler is called when an unhandled exception occurs in the coroutine (the coroutine itself becomes invalid then and can not be resumed any more). Technically, it is implemented by wrapping the whole body of the coroutine (the whole state machine) into a try/catch block whose catch calls the handler:
   
 ```
 void resume(Object data) {
-    try {
-        if (label == 0) goto L0
-        else if (label == 1) goto L1
-        else throw IllegalStateException()
-        
-    L0:
+    if (label == 0) goto L0
+    else if (label == 1) goto L1
+    else throw IllegalStateException()
+
+    try {        
+      L0:
         ...
         return
-    L1:
+      L1:
         ...
         return
     } catch (Throwable e) {
+        label = -2 // invalidate the coroutine
         controller.handleException(e)     
     }          
 }
@@ -541,11 +548,91 @@ void resume(Object data) {
 
 Exception handlers can not be overloaded.
 
-TODO: finally blocks
+TODO: there's an issue of handling `finally` blocks so that they may be executed by the controller no matter how the coroutine was completed. 
  
 ### Continuing with exception
 
-TODO
+When exceptions occur in asynchronous computations, they may be handled by the controller itself, or passed to the user code in the coroutine to be handled there (this depends on the design decision made by the library author).
+ 
+As shown above, the `Continuation` interfaces has a member function for resuming the coroutine with exception:
+ 
+```
+fun resumeWithException(exception: Throwable)
+```
+ 
+If a controller calls this function, the exception passed to it is re-thrown right after the coroutine is resumed (and thus it behaves as if the suspending call has thrown it):
+ 
+```
+async {
+    println("Starting the coroutine")
+    try {
+        val x = await(throwingFuture)
+        println(x)
+    }
+    catch (e: MyException) {
+        // if the controller calls c.resumeWithException(e), 
+        // the execution ends up here
+        report(e)
+    } 
+    println("Ending the coroutine")
+}
+```
+
+The way it is implemented in the byte code is as follows:
+
+```
+void resume(Object data) { doResume(data, null) }
+void resumeWithException(Throwable exception) { doResume(null, exception) }
+
+private void doResume(Object data, Throwable exception) { 
+    if (label == 0) goto L0
+    if (label == 1) goto L1
+    else throw IllegalStateException()
+    
+    // this try-catch is the compiler-generated one, for unhandled exceptions
+    try {     
+
+      L0:
+        println("Starting the coroutine")
+        // this try-catch is written by the user
+        try {  
+            label = 1
+            contoller.await(throwingFuture, this)
+            return
+      L1:
+            // if the coroutine was resumed with exception, throw it
+            if (exception != null) throw exception
+            
+            // if we ended up here, then there was no exception, 
+            // and `data` holds the result of `await(throwingFuture)`
+            Foo x = data as Foo  
+            println(x)
+        } catch (MyException e) {
+           report(e)
+        }
+        
+        println("Ending the coroutine")
+        label = -1
+        return
+        
+    } catch (Throwable e) {
+        label = -2 // invalidate the coroutine
+        controller.handleException(e)     
+    }          
+}  
+```
+
+Note that suspending in `finally` blocks will likely not be supported, at least in the nearest release.
+ 
+## Type-checking coroutines 
+
+
+
+## Complete code examples
+ 
+
+ 
+ 
  
 ## Type-checking coroutines 
  
