@@ -1,7 +1,6 @@
-package noController.async
+package noController.asyncNoCopying
 
-import noController.api.Continuation
-import noController.api.Coroutine
+import noController.api.*
 import java.util.concurrent.CompletableFuture
 
 // TEST CODE
@@ -20,7 +19,7 @@ fun main(args: Array<String>) {
         y
     }
 */
-    val future = async(__anonymous__())
+    val future = async({ __anonymous__() })
 
     future.whenComplete { value, t ->
         println("completed with $value")
@@ -29,16 +28,18 @@ fun main(args: Array<String>) {
 }
 
 // LIBRARY CODE
+// Note: this code is optimized for readability, the actual implementation would create fewer objects
 
-fun <T> async(c: () -> Coroutine<FutureController<T>>): CompletableFuture<T> = FutureController<T>().apply {
-    c().entryPoint(this).resume(Unit)
+fun <T> async(@coroutine c: () -> Coroutine<FutureController<T>>): CompletableFuture<T> {
+    val controller = FutureController<T>()
+    c().entryPoint(controller).resume(Unit)
+    return controller.future
 }
 
-/*
-    FutureController extends CompletableFuture to economize on allocations
- */
-class FutureController<T> : CompletableFuture<T>() {
-    fun <V> await(future: CompletableFuture<V>, machine: Continuation<V>) {
+class FutureController<T> {
+    val future = CompletableFuture<T>()
+
+    @suspend fun <V> await(future: CompletableFuture<V>, machine: Continuation<V>) {
         future.whenComplete { value, throwable ->
             if (throwable == null)
                 machine.resume(value)
@@ -47,32 +48,24 @@ class FutureController<T> : CompletableFuture<T>() {
         }
     }
 
-    fun handleResult(value: T, c: Continuation<Nothing>) {
-        complete(value)
+    @operator fun handleResult(value: T, c: Continuation<Nothing>) {
+        future.complete(value)
     }
 
-    fun handleException(t: Throwable, c: Continuation<Nothing>) {
-        completeExceptionally(t)
+    @operator fun handleException(t: Throwable, c: Continuation<Nothing>) {
+        future.completeExceptionally(t)
     }
 }
 
-class __anonymous__() : Coroutine<FutureController<String>>,
-        Continuation<Any?>,
-        Function0<Coroutine<FutureController<String>>> {
+// GENERATED CODE
 
-    @Volatile
-    private var _controller: FutureController<String>? = null
+class __anonymous__() : Coroutine<FutureController<String>>, Continuation<Any?> {
 
-    private val controller: FutureController<String>
-        get() = _controller ?: throw UnsupportedOperationException("Coroutine $this should be initialized before use")
-
-    private fun createOrCopy() = if (_controller == null) this else __anonymous__()
-    override fun invoke(): Coroutine<FutureController<String>> = createOrCopy()
+    private lateinit var controller: FutureController<String>
 
     override fun entryPoint(controller: FutureController<String>): Continuation<Unit> {
-        return createOrCopy().apply {
-            _controller = controller
-        }
+        this.controller = controller
+        return this as Continuation<Unit>
     }
 
     override fun resume(data: Any?) = doResume(data, null)
@@ -94,35 +87,31 @@ class __anonymous__() : Coroutine<FutureController<String>>,
     private fun doResume(data: Any?, exception: Throwable?) {
         try {
             when (label) {
-                    0 -> {
-                        if (exception != null) throw exception
-                        println("start")
-                        label = 1
-                        controller.await(foo(), this)
-                    }
-                    1 -> {
-                        if (exception != null) throw exception
-                        x = data as String
-                        println("got '$x'")
-                        label = 2
-                        controller.await(bar(x), this)
-                    }
-                    2 -> {
-                        if (exception != null) throw exception
-                        val y = data as String
-                        println("got '$y' after '$x'")
-                        label = -1
-                        controller.handleResult(y, this)
-                    }
-                    else -> throw UnsupportedOperationException("Coroutine $this is in an invalid state")
+                0 -> {
+                    if (exception != null) throw exception
+                    println("start")
+                    label = 1
+                    controller.await(foo(), this)
                 }
+                1 -> {
+                    if (exception != null) throw exception
+                    x = data as String
+                    println("got '$x'")
+                    label = 2
+                    controller.await(bar(x), this)
+                }
+                2 -> {
+                    if (exception != null) throw exception
+                    val y = data as String
+                    println("got '$y' after '$x'")
+                    label = -1
+                    controller.handleResult(y, this)
+                }
+                else -> throw UnsupportedOperationException("Coroutine $this is in an invalid state")
+            }
         } catch(e: Throwable) {
             label = -2
             controller.handleException(e, this)
         }
-    }
-
-    override fun toString(): String {
-        return "${__anonymous__::_controller.name} coroutine"
     }
 }

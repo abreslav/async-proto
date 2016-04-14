@@ -41,6 +41,33 @@ There are the following issues related to exception handling:
  * what can and can not be called in a finally block inside a coroutine 
 
 
+- keyword-less vs keyword-based syntax
+- handling of `finally` blocks
+- stack spilling for normal calls
+- stack spilling for constructor calls (mind the class initialization issue, check otehr languages)
+- irreducible CFGs may degrade performance
+- volatile fields to store state
+- nullify fields referencing objects when corresponding local go out of scope (to prevent memory leaks)
+
+- C++
+ - Critique to the C++ approach: https://habrahabr.ru/post/278267/
+ - [Coroutines belong in a TS](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2015/p0158r0.html)
+ - [resumable functions - async and await](http://meetingcpp.com/index.php/br/items/resumable-functions-async-and-await.html)
+ - [Habrahabr post in Russian](https://habrahabr.ru/post/278267/)
+- C#
+ - async and generators are separate concepts
+- Dart
+- F#
+- Go
+- TypeScript
+- Rust
+- Scala
+- Hack
+- JavaScript
+- Python
+
+
+
 Cancellation of futures
 
 API Naming
