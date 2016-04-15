@@ -682,7 +682,7 @@ In case of a suspending function mentioning type parameters of the controller cl
 
 # Code examples
   
-See this repo for complete samples: [kotlin-coroutines-examples](https://github.com/abreslav/kotlin-coroutines-examples/src).  
+See this repo for complete samples: [kotlin-coroutines-examples](https://github.com/abreslav/kotlin-coroutines-examples/tree/master/src).  
  
 #### A builder and controller for async/await
  
