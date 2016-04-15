@@ -1,10 +1,10 @@
-# KEEP-COFUN. Coroutines for Kotlin
+# Coroutines for Kotlin
 
-Document type: Language Design Proposal
-Document authors: Andrey Breslav
-Other contributors: Vladimir Reshetnikov, Stanislav Erokhin, Ilya Ryzhenkov
-Document status: under review
-Prototype implementation: not started  
+* **Type**: Informal description
+* **Author**: Andrey Breslav
+* **Contributors**: Vladimir Reshetnikov, Stanislav Erokhin, Ilya Ryzhenkov
+* **Status**: Under consideration
+* **Prototype**: not started  
 
 ## Abstract
 
@@ -19,6 +19,26 @@ Requirements:
 - Cover equally the "async/await" use case and "generator blocks".
 
 It is an explicit goal of this proposal to make it possible to utilize Kotlin coroutines as wrappers for different existing asynchronous APIs (such as Java NIO, different implementations of Futures, etc).  
+
+## Table of Contents
+
+* [Use cases](#use-cases)
+  * [Asynchronous computations](#asynchronous-computations)
+  * [Generators](#generators)
+  * [More use cases](#more-use-cases)
+* [Coroutines overview](#coroutines-overview)
+  * [Terminology](#terminology)
+  * [Implementation through state machines](#implementation-through-state-machines)
+* [The building blocks](#the-building-blocks)
+  * [A lifecycle of a coroutine](#a-lifecycle-of-a-coroutine)
+  * [Library interfaces](#library-interfaces)
+  * [Controller](#controller)
+  * [Suspending functions](#suspending-functions)
+  * [Result handlers](#result-handlers)
+  * [Exception handlers](#exception-handlers)
+  * [Continuing with exception](#continuing-with-exception)
+* [Type-checking coroutines](#type-checking-coroutines)
+* [Code examples](#code-examples)
 
 ## Use cases
 
@@ -115,7 +135,7 @@ return future.get()
 With coroutines, this could be rewritten as
 
 ```
-asyncFutures {
+async {
     val original = asyncLoadImage("...original...") // creates a Future
     val overlay = asyncLoadImage("...overlay...")   // creates a Future
     ...
@@ -125,11 +145,13 @@ asyncFutures {
 }
 ```
 
-Again, less indentation and more natural composition logic (and exception handling, not shown here), and no building async/await into teh language: `asyncFuture {}` and `await()` are functions in a library. 
+> Find the library code for `async {}` [here](https://github.com/abreslav/kotlin-coroutines-examples/blob/master/src/async.kt#L30)  
+
+Again, less indentation and more natural composition logic (and exception handling, not shown here), and no building async/await into teh language: `async{}` and `await()` are functions in a library. 
 
 > With the help of _delegated properties_, the example above may be simplified even further:
 ```
-asyncFutures {
+async {
     val original by asyncLoadImage("...original...")
     val overlay by asyncLoadImage("...overlay...")
     ...
@@ -157,7 +179,7 @@ This style of expressing (lazy) filtering/mapping is often acceptable, but has i
 As a coroutine, this becomes close to a "comprehension":
  
 ```
-val seq = input.transform {
+val seq = input.generate {
     if (it.isValid()) {      // "filter"
         val foo = it.toFoo() // "map"
         if (foo.isGood()) {  // "filter"
@@ -171,7 +193,7 @@ val seq = input.transform {
 This form may look more verbose in this case, but if we add some more code in between the operations, or some non-trivial control flow, it has invaluable benefits:
 
 ```
-val seq = transform {
+val seq = generate {
     yield(firstItem) // suspension point
 
     for (item in input) {
@@ -189,6 +211,8 @@ val seq = transform {
     }
 } 
 ```
+
+> Find the library code for `generate {}` [here](https://github.com/abreslav/kotlin-coroutines-examples/blob/master/src/yield.kt#L25)  
 
 This approach also allows to express `yieldAll(sequence)` as a library functions (as well as `generate {}` and `yeild()` are), which simplifies joining lazy sequences and allows for efficient implementation (a naïve one is quadratic in the depth of the joins).  
 
@@ -348,6 +372,8 @@ class <anonymous_for_state_machine> : Coroutine<...> {
 }    
 ```  
 
+> Find more state machine examples in [async.kt](https://github.com/abreslav/kotlin-coroutines-examples/blob/master/src/async.kt#L60) and [yield.kt](https://github.com/abreslav/kotlin-coroutines-examples/blob/master/src/yield.kt#L58)  
+
 Note: boxing can be eliminated here, through having another parameter to `resume()`, but we are not getting into these details.
 
 ## The building blocks
@@ -381,6 +407,8 @@ interface Continuation<P> {
 }
 ```
 
+> Find the library code for [here](https://github.com/abreslav/kotlin-coroutines-examples/blob/master/src/Coroutines.kt#L21)
+
 So, a typical coroutine builder would look like this:
  
 ```
@@ -399,7 +427,9 @@ fun <T> async(coroutine c: () -> Coroutine<FutureController<T>>): Future<T> {
     // return the Future object that is created internally by the controller
     return controller.future
 }    
-``` 
+```
+ 
+> Find a working example [here](https://github.com/abreslav/kotlin-coroutines-examples/blob/master/src/async.kt#L30)  
 
 The `c` parameter normally receives a lambda, and its `coroutine` modifier indicates that this lambda is a coroutine, so its body has to be translated into a state machine. Note that such a lambda may have parameters which can be naturally expressed as `(Foo, Bar) -> Coroutine<...>`.  
   
@@ -439,6 +469,8 @@ suspend fun <T> await(f: CompletableFuture<T>, c: Continuation<T>) {
     }
 }
 ``` 
+
+> Find a working example [here](https://github.com/abreslav/kotlin-coroutines-examples/blob/master/src/async.kt#L42)  
 
 The `suspend` modifier indicates that this function is special, and its calls are suspension points that correspond to states of a state machine. 
 
@@ -655,6 +687,77 @@ In case of a suspending function mentioning type parameters of the controller cl
 
 > A typical example of this is generators, where the `generate` function has a type-parameter `T` and returns `Sequence<T>`, and this `T` is determined based on what values calls to `yield()` take in the body of the coroutine.  
 
-## Code examples
+# Code examples
  
-See this repo: [https://github.com/abreslav/kotlin-coroutines-examples](https://github.com/abreslav/kotlin-coroutines-examples). 
+A builder and controller for [async/await](https://github.com/abreslav/kotlin-coroutines-examples/blob/master/src/async.kt#L30):
+ 
+```
+// Note: this code is optimized for readability, the actual implementation would create fewer objects
+
+fun <T> async(@coroutine c: () -> Coroutine<FutureController<T>>): CompletableFuture<T> {
+    val controller = FutureController<T>()
+    c().entryPoint(controller).resume(Unit)
+    return controller.future
+}
+
+class FutureController<T> {
+    val future = CompletableFuture<T>()
+
+    @suspend fun <V> await(future: CompletableFuture<V>, machine: Continuation<V>) {
+        future.whenComplete { value, throwable ->
+            if (throwable == null)
+                machine.resume(value)
+            else
+                machine.resumeWithException(throwable)
+        }
+    }
+
+    @operator fun handleResult(value: T, c: Continuation<Nothing>) {
+        future.complete(value)
+    }
+
+    @operator fun handleException(t: Throwable, c: Continuation<Nothing>) {
+        future.completeExceptionally(t)
+    }
+}
+``` 
+ 
+A builder and controller for [yield](https://github.com/abreslav/kotlin-coroutines-examples/blob/master/src/yield.kt#L25):
+ 
+```
+// Note: this code is optimized for readability, the actual implementation would create fewer objects
+
+fun <T> generate(@coroutine c: () -> Coroutine<GeneratorController<T>>): Sequence<T> = object : Sequence<T> {
+    override fun iterator(): Iterator<T> {
+        val iterator = GeneratorController<T>()
+        iterator.setNextStep(c().entryPoint(iterator))
+        return iterator
+    }
+}
+
+class GeneratorController<T>() : AbstractIterator<T>() {
+    private lateinit var nextStep: Continuation<Unit>
+
+    override fun computeNext() {
+        nextStep.resume(Unit)
+    }
+
+    fun setNextStep(step: Continuation<Unit>) {
+        this.nextStep = step
+    }
+
+
+    @suspend fun yieldValue(value: T, c: Continuation<Unit>) {
+        setNext(value)
+        setNextStep(c)
+    }
+
+    @operator fun handleResult(result: Unit, c: Continuation<Nothing>) {
+        done()
+    }
+} 
+``` 
+
+This makes use of the [`AbstractIterator`](https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.collections/-abstract-iterator/) class from the standard library (find its source code [here](https://github.com/JetBrains/kotlin/blob/dd2ae155315a5c100daaad515068075ce02c99f4/libraries/stdlib/src/kotlin/collections/AbstractIterator.kt#L12)). 
+ 
+> See this repo for complete samples: [https://github.com/abreslav/kotlin-coroutines-examples](https://github.com/abreslav/kotlin-coroutines-examples). 
