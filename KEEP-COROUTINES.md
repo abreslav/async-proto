@@ -696,7 +696,7 @@ A builder and controller for [async/await](https://github.com/abreslav/kotlin-co
 ``` kotlin
 // Note: this code is optimized for readability, the actual implementation would create fewer objects
 
-fun <T> async(@coroutine c: () -> Coroutine<FutureController<T>>): CompletableFuture<T> {
+fun <T> async(coroutine c: () -> Coroutine<FutureController<T>>): CompletableFuture<T> {
     val controller = FutureController<T>()
     c().entryPoint(controller).resume(Unit)
     return controller.future
@@ -705,7 +705,7 @@ fun <T> async(@coroutine c: () -> Coroutine<FutureController<T>>): CompletableFu
 class FutureController<T> {
     val future = CompletableFuture<T>()
 
-    @suspend fun <V> await(future: CompletableFuture<V>, machine: Continuation<V>) {
+    suspend fun <V> await(future: CompletableFuture<V>, machine: Continuation<V>) {
         future.whenComplete { value, throwable ->
             if (throwable == null)
                 machine.resume(value)
@@ -714,11 +714,11 @@ class FutureController<T> {
         }
     }
 
-    @operator fun handleResult(value: T, c: Continuation<Nothing>) {
+    operator fun handleResult(value: T, c: Continuation<Nothing>) {
         future.complete(value)
     }
 
-    @operator fun handleException(t: Throwable, c: Continuation<Nothing>) {
+    operator fun handleException(t: Throwable, c: Continuation<Nothing>) {
         future.completeExceptionally(t)
     }
 }
@@ -729,7 +729,7 @@ A builder and controller for [yield](https://github.com/abreslav/kotlin-coroutin
 ``` kotlin
 // Note: this code is optimized for readability, the actual implementation would create fewer objects
 
-fun <T> generate(@coroutine c: () -> Coroutine<GeneratorController<T>>): Sequence<T> = object : Sequence<T> {
+fun <T> generate(coroutine c: () -> Coroutine<GeneratorController<T>>): Sequence<T> = object : Sequence<T> {
     override fun iterator(): Iterator<T> {
         val iterator = GeneratorController<T>()
         iterator.setNextStep(c().entryPoint(iterator))
@@ -749,12 +749,12 @@ class GeneratorController<T>() : AbstractIterator<T>() {
     }
 
 
-    @suspend fun yieldValue(value: T, c: Continuation<Unit>) {
+    suspend fun yieldValue(value: T, c: Continuation<Unit>) {
         setNext(value)
         setNextStep(c)
     }
 
-    @operator fun handleResult(result: Unit, c: Continuation<Nothing>) {
+    operator fun handleResult(result: Unit, c: Continuation<Nothing>) {
         done()
     }
 } 
@@ -767,7 +767,7 @@ A builder and controller for `asyncIO`:
 ``` kotlin
 // Note: this code is optimized for readability, the actual implementation would create fewer objects
 
-fun <T> asyncIO(@coroutine c: () -> Coroutine<AsyncIOController<T>>): CompletableFuture<T> {
+fun <T> asyncIO(coroutine c: () -> Coroutine<AsyncIOController<T>>): CompletableFuture<T> {
     val controller = AsyncIOController<T>()
     c().entryPoint(controller).resume(Unit)
     return controller.future
@@ -786,19 +786,19 @@ class AsyncIOController<T> {
         }
     }
 
-    @suspend fun AsynchronousFileChannel.aRead(buf: ByteBuffer, position: Long, c: Continuation<Int>) {
+    suspend fun AsynchronousFileChannel.aRead(buf: ByteBuffer, position: Long, c: Continuation<Int>) {
         this.read(buf, position, null, AsyncIOHandler(c))
     }
 
-    @suspend fun AsynchronousFileChannel.aWrite(buf: ByteBuffer, position: Long, c: Continuation<Int>) {
+    suspend fun AsynchronousFileChannel.aWrite(buf: ByteBuffer, position: Long, c: Continuation<Int>) {
         this.write(buf, position, null, AsyncIOHandler(c))
     }
 
-    @operator fun handleResult(value: T, c: Continuation<Nothing>) {
+    operator fun handleResult(value: T, c: Continuation<Nothing>) {
         future.complete(value)
     }
 
-    @operator fun handleException(t: Throwable, c: Continuation<Nothing>) {
+    operator fun handleException(t: Throwable, c: Continuation<Nothing>) {
         future.completeExceptionally(t)
     }
 }
