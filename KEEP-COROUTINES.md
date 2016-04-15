@@ -640,7 +640,7 @@ The following rules apply:
 
 In the body of a coroutine, member functions of the controller that are marked with the `suspend` modifier may be called without qualification and without passing the continuation parameter explicitly. The controller itself is not accessible through `this`. (We may allow other kinds of functions on controller to be called without qualification.)
    
-A function may be marked as `suspend` (and be called a _suspending function_) if 
+A function may be marked as `suspend` (and thus be a _suspending function_) if 
 * it has at least one parameter, 
 * the last of its parameters (the _continuation parameter_) is not vararg, and
 * has type `Continuation<...>` where the type-argument is called the _result type_ of the suspending function.
