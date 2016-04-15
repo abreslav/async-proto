@@ -317,9 +317,9 @@ Note that:
  * there's a `goto` operator and labels, because the example depicts what happens in the byte code, not the source code.
 
 Now, when the coroutine is started, we call its `resume()`: `label` is `0`, and we jump to `L0`, then we do some work, 
-set the `label` to the next state — `1` and return (which is — suspend the execution of the coroutine). 
+set the `label` to the next state — `1`, call `await()` and return (which is — suspend the execution of the coroutine). 
 When we want to continue the execution, we call `resume()` again, and now it proceeds right to `L1`, does some work, sets
-the state to `2`, and suspends again. Next time it continues from `L3` setting the state to `-1` which means "over, 
+the state to `2`, calls `await()` and suspends again. Next time it continues from `L3` setting the state to `-1` which means "over, 
 no more work to do". The details about how the `data` parameter works are given below.
 
 A suspension point inside a loop generates only one state, because loops also work through (conditional) `goto`:
