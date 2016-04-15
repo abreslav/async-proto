@@ -98,58 +98,18 @@ Syntax
   * <unify T>
   
   
---------------  
-Feature request: something like "async vals". Use case:
-  
+> With the help of _delegated properties_, the example above may be simplified even further:
 ```
-asyncFutures {
-    val original = await(asyncLoadImage("...original...")) // creates a Future
-    val overlay = await(asyncLoadImage("...overlay..."))   // creates a Future
-    ...
-    return applyOverlay(orig, over)
-}
-```
-Problem: the `overlay` one isn't starting until the original one is done. We could say something like this:
-  
-```
-asyncFutures {
-    async val original = asyncLoadImage("...original...") // creates a Future
-    async val overlay = asyncLoadImage("...overlay...")   // creates a Future
-    ...
-    return applyOverlay(orig, over)
-}
-```  
-So that:
-- the compiler checks that `await` is applicable (how would it know it must be `await` and not some other function?)
-  - maybe say `await val` and use the name before the `val` as the name to look for?
-- the rhs is executed
-- the suspension and await call is not done until we use either of the variables
-  - i.e. we remember what `asynLoadImage` returned (future), and await it only on the first access
-  
-Same for functions:
-
-```
-async fun foo() = ...
-
-println(foo()) // await'ed automatically
-```
-
-
-Looks like this can be done in a library!
-
-```
-class Controller {
-    suspend fun <T> Future<T>.getValue(p: KProperty<*>): T = await(this)
-}
-
-asyncFutures {
+async {
     val original by asyncLoadImage("...original...")
     val overlay by asyncLoadImage("...overlay...")
     ...
-    return applyOverlay(orig, over)
+    // access to the properties (i.e. the getValue()) can be defined as a suspending function,
+    // so there's no need for explicit await()
+    return applyOverlay(original, overlay)
 }
 ```
---------   
+
   
   
   * use cases

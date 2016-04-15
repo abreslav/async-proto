@@ -8,7 +8,7 @@
 
 ## Abstract
 
-We propose to add coroutines to Kotlin. This concept is also known as or partly covers
+We propose to add coroutines to Kotlin. This concept is also known as, or partly covers
 
 - generators/yield
 - async/await
@@ -152,19 +152,7 @@ async {
 
 > Find the library code for `async {}` [here](#a-builder-and-controller-for-asyncawait)  
 
-Again, less indentation and more natural composition logic (and exception handling, not shown here), and no building async/await into teh language: `async{}` and `await()` are functions in a library. 
-
-> With the help of _delegated properties_, the example above may be simplified even further:
-```
-async {
-    val original by asyncLoadImage("...original...")
-    val overlay by asyncLoadImage("...overlay...")
-    ...
-    // access to the properties (i.e. the getValue()) can be defined as a suspending function,
-    // so there's no need for explicit await()
-    return applyOverlay(original, overlay)
-}
-```
+Again, less indentation and more natural composition logic (and exception handling, not shown here), and no building async/await into the language: `async{}` and `await()` are functions in a library. 
 
 ### Generators
 
