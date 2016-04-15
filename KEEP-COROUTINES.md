@@ -407,7 +407,7 @@ interface Continuation<P> {
 }
 ```
 
-> Find the library code for [here](https://github.com/abreslav/kotlin-coroutines-examples/blob/master/src/Coroutines.kt#L21)
+> Find the library code [here](https://github.com/abreslav/kotlin-coroutines-examples/blob/master/src/coroutines.kt)
 
 So, a typical coroutine builder would look like this:
  
