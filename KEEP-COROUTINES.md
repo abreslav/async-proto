@@ -50,7 +50,7 @@ A coroutine can be thought of as a _suspendable computation_, i.e. the one that 
 First motivating use case for coroutines is asynchronous computations (handled by async/await in C# and other languages). Let's take a look at how such computations are done with callbacks. As an inspiration, let's take 
 asynchronous I/O (the APIs below are simplified):
 
-```
+``` kotlin
 // asynchronously read into `buf`, and when done run the lambda
 inFile.read(buf) {
     // this lambda is executed when the reading completes
@@ -76,7 +76,7 @@ levels are growing every time, and one can easily anticipate the problems that m
 This same computation can be expressed straightforwardly as a coroutine (provided that there's a library that adapts
  the I/O APIs to coroutine requirements):
  
-```
+``` kotlin
 asyncIO {
     // suspend while asynchronously reading
     val bytesRead = inFile.read(buf) 
@@ -101,7 +101,7 @@ It's our explicit goal to support coroutines in a very generic way, so in this e
 
 Note that with explicitly passed callbacks having an asynchronous call in the middle of a loop can be tricky, but in a coroutine it is a perfectly normal thing to have:
 
-```
+``` kotlin
 asyncIO {
     while (true) {
         // suspend while asynchronously reading
@@ -125,7 +125,7 @@ One can imagine that handling exceptions is also a bit more convenient in a coro
 There's another style of expressing asynchronous computations: through futures (and their close relatives — promises).
 We'll use an imaginary API here, to apply an overlay to an image:
 
-```
+``` kotlin
 val future = runAfterBoth(
     asyncLoadImage("...original..."), // creates a Future 
     asyncLoadImage("...overlay...")   // creates a Future
@@ -139,7 +139,7 @@ return future.get()
 
 With coroutines, this could be rewritten as
 
-```
+``` kotlin
 async {
     val original = asyncLoadImage("...original...") // creates a Future
     val overlay = asyncLoadImage("...overlay...")   // creates a Future
@@ -159,7 +159,7 @@ Again, less indentation and more natural composition logic (and exception handli
 Another typical use case for coroutines would be lazily computed sequences (handled by `yield` in C#, Python 
 and many other languages):
  
-```
+``` kotlin
 val seq = input.filter { it.isValid() }.map { it.toFoo() }.filter { it.isGood() }
 ```
 
@@ -171,7 +171,7 @@ This style of expressing (lazy) filtering/mapping is often acceptable, but has i
  
 As a coroutine, this becomes close to a "comprehension":
  
-```
+``` kotlin
 val seq = input.generate {
     if (it.isValid()) {      // "filter"
         val foo = it.toFoo() // "map"
@@ -185,7 +185,7 @@ val seq = input.generate {
 
 This form may look more verbose in this case, but if we add some more code in between the operations, or some non-trivial control flow, it has invaluable benefits:
 
-```
+``` kotlin
 val seq = generate {
     yield(firstItem) // suspension point
 
@@ -232,7 +232,7 @@ NOTE: all names, APIs and syntactic constructs described below are subject to di
 Syntactically, a coroutine looks exactly as a function literal `{ x, y -> ... }`. A coroutine is distinguished by the compiler from a function literal based on the special type context in which it occurs. A coroutine is typechecked using different rules and in a different way than a regular function literal.
  
 > Note: Some languages with coroutine support allow coroutines to take forms both of an anonymous function and of a method body. Kotlin supports only one syntactic flavor of coroutines, resembling function literals. In case where a coroutine in the form of a method body would be used in another language, in Kotlin such method would typically be a regular method with an expression body, consisting of an invocation expression whose last argument is a coroutine: 
- ```
+ ``` kotlin
  fun asyncTask() = async { ... }
  ```
 
@@ -241,7 +241,7 @@ Syntactically, a coroutine looks exactly as a function literal `{ x, y -> ... }`
 * Such a function is called a _suspending function_, it receives a _continuation_ object as an argument which is passed implicitly from the calling coroutine.
 
 * _Continuation_ is like a function that begins right after one of the suspension points of a coroutine. For example:
-```
+``` kotlin
 generate {
     for (i in 1..10) yield(i * i)
     println("over")
@@ -256,7 +256,7 @@ It's crucial to implement continuations efficiently, i.e. create as few classes 
  
 Main idea: a coroutine is compiled to a state machine, where states correspond to suspension points. Example: let's take a coroutine with two suspension points:
  
-```
+``` kotlin
 val a = a()
 val y = await(foo(a)) // suspension point
 b()
@@ -274,7 +274,7 @@ Every state is an entry point to one of the continuations of this coroutine (the
  
 The code is compiled to an anonymous class that has a method implementing the state machine, a field holding the current state of the state machine, and fields for local variables of the coroutines that are shared between states (there may also be fields for the closure of the coroutine, but in this case it's empty). Here's pseudo-bytecode for the coroutine above: 
   
-```
+``` java
 class <anonymous_for_state_machine> {
     // The current state of the state machine
     int label = 0
@@ -324,7 +324,7 @@ no more work to do". The details about how the `data` parameter works are given 
 
 A suspension point inside a loop generates only one state, because loops also work through (conditional) `goto`:
  
-```
+``` kotlin
 var x = 0
 while (x < 10) {
     x += await(nextNumber())
@@ -333,7 +333,7 @@ while (x < 10) {
 
 is generated as
 
-```
+``` java
 class <anonymous_for_state_machine> : Coroutine<...> {
     // The current state of the state machine
     int label = 0
@@ -404,7 +404,7 @@ interface Continuation<P> {
 
 So, a typical coroutine builder would look like this:
  
-```
+``` kotlin
 fun <T> async(coroutine c: () -> Coroutine<FutureController<T>>): Future<T> { 
     // get an instance of the coroutine
     val coroutine = c() 
@@ -450,7 +450,7 @@ suspend until it's explicitly resumed by someone. Suspension points are calls to
 
 A suspending function looks something like this:
   
-```
+``` kotlin
 suspend fun <T> await(f: CompletableFuture<T>, c: Continuation<T>) {
     f.whenComplete { result, throwable ->
         if (throwable == null)
@@ -473,7 +473,7 @@ The value passed to `resume()` acts as the **return value** of `await()` calls i
 
 Consider this example of a coroutine:
  
-```
+``` kotlin
 async {
     val x = await(foo) // suspension point
     println(x)
@@ -482,7 +482,7 @@ async {
 
 Here's the state machine code generated for it:
  
-```
+``` java
 void resume(Object data) { 
     if (label == 0) goto L0
     if (label == 1) goto L1
@@ -516,7 +516,7 @@ NOTE: some may argue that it's better to make suspension points more visible at 
 
 A coroutine body looks like a regular lambda in the code and, like a lambda, it may have parameters and return a value. Handling parameters is covered above, and returned values are passed to a designated function (or functions) in the controller:
  
-```
+``` kotlin
 class FutureController<T> {
     val future: CompletableFuture<T> = ...
     
@@ -528,7 +528,7 @@ class FutureController<T> {
  
 The `handleResult()` function is called on the last expression in the body of a coroutine as well as on each explicit `return` from it:
    
-```
+``` kotlin
 val r = async {
     if (...) 
         return default // this calls `handleResult(default)`
@@ -547,7 +547,7 @@ Handling exceptions in coroutines may be tricky, and some details of it are to b
  
 A controller may define an exception handler:
  
-```
+``` kotlin
 operator fun handleException(e: Throwable, c: Continuation<Nothing>) {
     future.completeExceptionally(e) 
 }
@@ -555,7 +555,7 @@ operator fun handleException(e: Throwable, c: Continuation<Nothing>) {
 
 This handler is called when an unhandled exception occurs in the coroutine (the coroutine itself becomes invalid then and can not be resumed any more). Technically, it is implemented by wrapping the whole body of the coroutine (the whole state machine) into a try/catch block whose catch calls the handler:
   
-```
+``` java
 void resume(Object data) {
     if (label == 0) goto L0
     else if (label == 1) goto L1
@@ -585,13 +585,13 @@ When exceptions occur in asynchronous computations, they may be handled by the c
  
 As shown above, the `Continuation` interfaces has a member function for resuming the coroutine with exception:
  
-```
+``` kotlin
 fun resumeWithException(exception: Throwable)
 ```
  
 If a controller calls this function, the exception passed to it is re-thrown right after the coroutine is resumed (and thus it behaves as if the suspending call has thrown it):
  
-```
+``` kotlin
 async {
     println("Starting the coroutine")
     try {
@@ -609,7 +609,7 @@ async {
 
 The way it is implemented in the byte code is as follows:
 
-```
+``` java
 void resume(Object data) { doResume(data, null) }
 void resumeWithException(Throwable exception) { doResume(null, exception) }
 
