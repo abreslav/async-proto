@@ -96,7 +96,7 @@ The calls to `read()` and `write()` here are treated specially by the coroutine:
 
 It's our explicit goal to support coroutines in a very generic way, so in this example, `asyncIO {}`, `File.read()` and `File.write()` are just **library functions** geared for working with coroutines (details below): `asyncIO` marks the scope of a coroutine and controls its behavior, and `read/write` are recognized as special _suspending functions_, for they suspend the computation and implicitly receive continuations.  
 
-> Find the library code for `asyncIO {}` [here](https://github.com/abreslav/kotlin-coroutines-examples/blob/master/src/io.kt#L100).
+> Find the library code for `asyncIO {}` [here](#a-builder-and-controller-for-asyncio).
 
 Note that with explicitly passed callbacks having an asynchronous call in the middle of a loop can be tricky, but in a coroutine it is a perfectly normal thing to have:
 
@@ -147,7 +147,7 @@ async {
 }
 ```
 
-> Find the library code for `async {}` [here](https://github.com/abreslav/kotlin-coroutines-examples/blob/master/src/async.kt#L30)  
+> Find the library code for `async {}` [here](#a-builder-and-controller-for-asyncawait)  
 
 Again, less indentation and more natural composition logic (and exception handling, not shown here), and no building async/await into teh language: `async{}` and `await()` are functions in a library. 
 
@@ -214,7 +214,7 @@ val seq = generate {
 } 
 ```
 
-> Find the library code for `generate {}` [here](https://github.com/abreslav/kotlin-coroutines-examples/blob/master/src/yield.kt#L25)  
+> Find the library code for `generate {}` [here](#a-builder-and-controller-for-yield)  
 
 This approach also allows to express `yieldAll(sequence)` as a library functions (as well as `generate {}` and `yeild()` are), which simplifies joining lazy sequences and allows for efficient implementation (a naïve one is quadratic in the depth of the joins).  
 
@@ -690,8 +690,10 @@ In case of a suspending function mentioning type parameters of the controller cl
 > A typical example of this is generators, where the `generate` function has a type-parameter `T` and returns `Sequence<T>`, and this `T` is determined based on what values calls to `yield()` take in the body of the coroutine.  
 
 # Code examples
+  
+See this repo for complete samples: [https://github.com/abreslav/kotlin-coroutines-examples](https://github.com/abreslav/kotlin-coroutines-examples/src).  
  
-A builder and controller for [async/await](https://github.com/abreslav/kotlin-coroutines-examples/blob/master/src/async.kt#L30):
+#### A builder and controller for async/await
  
 ``` kotlin
 // Note: this code is optimized for readability, the actual implementation would create fewer objects
@@ -723,9 +725,11 @@ class FutureController<T> {
     }
 }
 ``` 
+
+> See the [repo](https://github.com/abreslav/kotlin-coroutines-examples/blob/master/src/async.kt#L30) 
  
-A builder and controller for [yield](https://github.com/abreslav/kotlin-coroutines-examples/blob/master/src/yield.kt#L25):
- 
+#### A builder and controller for yield
+
 ``` kotlin
 // Note: this code is optimized for readability, the actual implementation would create fewer objects
 
@@ -760,9 +764,12 @@ class GeneratorController<T>() : AbstractIterator<T>() {
 } 
 ``` 
 
+> See the [repo](https://github.com/abreslav/kotlin-coroutines-examples/blob/master/src/yield.kt#L25)
+
 This makes use of the [`AbstractIterator`](https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.collections/-abstract-iterator/) class from the standard library (find its source code [here](https://github.com/JetBrains/kotlin/blob/dd2ae155315a5c100daaad515068075ce02c99f4/libraries/stdlib/src/kotlin/collections/AbstractIterator.kt#L12)). 
+
  
-A builder and controller for `asyncIO`:
+#### A builder and controller for asyncIO
  
 ``` kotlin
 // Note: this code is optimized for readability, the actual implementation would create fewer objects
@@ -803,5 +810,5 @@ class AsyncIOController<T> {
     }
 }
 ``` 
- 
-> See this repo for complete samples: [https://github.com/abreslav/kotlin-coroutines-examples](https://github.com/abreslav/kotlin-coroutines-examples/src). 
+
+> See the [repo](https://github.com/abreslav/kotlin-coroutines-examples/blob/master/src/io.kt#L100)
