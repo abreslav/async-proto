@@ -2,6 +2,9 @@ Links:
 * C# new tasks https://github.com/dotnet/roslyn/issues/7169
 * Scala.react http://infoscience.epfl.ch/record/176887/files/DeprecatingObservers2012.pdf
 
+* allow suspending functions return a Boolean that says whether a suspension is needed or not
+   * how to pass the result back immediately?
+
 * How to avoid boxing with Continuation.resume(T)
 
 * How to implement passing the result of a suspending call back to the coroutine?
