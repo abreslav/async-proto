@@ -96,6 +96,8 @@ The calls to `read()` and `write()` here are treated specially by the coroutine:
 
 It's our explicit goal to support coroutines in a very generic way, so in this example, `asyncIO {}`, `File.read()` and `File.write()` are just **library functions** geared for working with coroutines (details below): `asyncIO` marks the scope of a coroutine and controls its behavior, and `read/write` are recognized as special _suspending functions_, for they suspend the computation and implicitly receive continuations.  
 
+> Find the library code for `asyncIO {}` [here](https://github.com/abreslav/kotlin-coroutines-examples/blob/master/src/io.kt#L100).
+
 Note that with explicitly passed callbacks having an asynchronous call in the middle of a loop can be tricky, but in a coroutine it is a perfectly normal thing to have:
 
 ```
@@ -691,7 +693,7 @@ In case of a suspending function mentioning type parameters of the controller cl
  
 A builder and controller for [async/await](https://github.com/abreslav/kotlin-coroutines-examples/blob/master/src/async.kt#L30):
  
-```
+``` kotlin
 // Note: this code is optimized for readability, the actual implementation would create fewer objects
 
 fun <T> async(@coroutine c: () -> Coroutine<FutureController<T>>): CompletableFuture<T> {
@@ -724,7 +726,7 @@ class FutureController<T> {
  
 A builder and controller for [yield](https://github.com/abreslav/kotlin-coroutines-examples/blob/master/src/yield.kt#L25):
  
-```
+``` kotlin
 // Note: this code is optimized for readability, the actual implementation would create fewer objects
 
 fun <T> generate(@coroutine c: () -> Coroutine<GeneratorController<T>>): Sequence<T> = object : Sequence<T> {
@@ -760,4 +762,46 @@ class GeneratorController<T>() : AbstractIterator<T>() {
 
 This makes use of the [`AbstractIterator`](https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.collections/-abstract-iterator/) class from the standard library (find its source code [here](https://github.com/JetBrains/kotlin/blob/dd2ae155315a5c100daaad515068075ce02c99f4/libraries/stdlib/src/kotlin/collections/AbstractIterator.kt#L12)). 
  
-> See this repo for complete samples: [https://github.com/abreslav/kotlin-coroutines-examples](https://github.com/abreslav/kotlin-coroutines-examples). 
+A builder and controller for `asyncIO`:
+ 
+``` kotlin
+// Note: this code is optimized for readability, the actual implementation would create fewer objects
+
+fun <T> asyncIO(@coroutine c: () -> Coroutine<AsyncIOController<T>>): CompletableFuture<T> {
+    val controller = AsyncIOController<T>()
+    c().entryPoint(controller).resume(Unit)
+    return controller.future
+}
+
+class AsyncIOController<T> {
+    val future = CompletableFuture<T>()
+
+    private class AsyncIOHandler(val c: Continuation<Int>) : CompletionHandler<Int, Nothing?> {
+        override fun completed(result: Int, attachment: Nothing?) {
+            c.resume(result)
+        }
+
+        override fun failed(exc: Throwable, attachment: Nothing?) {
+            c.resumeWithException(exc)
+        }
+    }
+
+    @suspend fun AsynchronousFileChannel.aRead(buf: ByteBuffer, position: Long, c: Continuation<Int>) {
+        this.read(buf, position, null, AsyncIOHandler(c))
+    }
+
+    @suspend fun AsynchronousFileChannel.aWrite(buf: ByteBuffer, position: Long, c: Continuation<Int>) {
+        this.write(buf, position, null, AsyncIOHandler(c))
+    }
+
+    @operator fun handleResult(value: T, c: Continuation<Nothing>) {
+        future.complete(value)
+    }
+
+    @operator fun handleException(t: Throwable, c: Continuation<Nothing>) {
+        future.completeExceptionally(t)
+    }
+}
+``` 
+ 
+> See this repo for complete samples: [https://github.com/abreslav/kotlin-coroutines-examples](https://github.com/abreslav/kotlin-coroutines-examples/src). 
