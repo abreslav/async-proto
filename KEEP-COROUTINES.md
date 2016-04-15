@@ -531,13 +531,13 @@ The `handleResult()` function is called on the last expression in the body of a 
 ``` kotlin
 val r = async {
     if (...) 
-        return default // this calls `handleResult(default)`
+        return@async default // this calls `handleResult(default)`
     val f = await(foo)
     f + 1 // this calls `handleResult(f + 1)`           
 }   
 ```   
  
-As any function, `handleResult()` may be overloaded, and if a suitable overload is not available for a returned expression, it is a compilation error. If no `handleResult()` is defined in the controller, the last expression in the body of the coroutine is ignored and `return` with an argument is forbidden (`return Unit` may be allowed).
+As any function, `handleResult()` may be overloaded, and if a suitable overload is not available for a returned expression, it is a compilation error. If no `handleResult()` is defined in the controller, the values of last expression in the body of the coroutine is discarded and `return` with an argument is forbidden (`return Unit` may be allowed).
  
 Note: the continuation parameter in the result handler is provided for uniformity, and may be used for advanced operations such as resetting the state machine or serializing its state. 
  
