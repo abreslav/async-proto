@@ -24,6 +24,7 @@ It is an explicit goal of this proposal to make it possible to utilize Kotlin co
 
 * [Use cases](#use-cases)
   * [Asynchronous computations](#asynchronous-computations)
+  * [Futures](#futures)
   * [Generators](#generators)
   * [More use cases](#more-use-cases)
 * [Coroutines overview](#coroutines-overview)
@@ -118,6 +119,8 @@ asyncIO {
 ```
 
 One can imagine that handling exceptions is also a bit more convenient in a coroutine.
+
+### Futures
 
 There's another style of expressing asynchronous computations: through futures (and their close relatives — promises).
 We'll use an imaginary API here, to apply an overlay to an image:
