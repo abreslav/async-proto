@@ -252,7 +252,7 @@ Here, every time the coroutine is suspended at a call to `yield()`, _the rest of
 
 ### Implementation through state machines
 
-It's crucial to implement continations efficiently, i.e. create as few classes and objects as possible. Many languages implement them through _state machines_, and in the case of Kotlin this approach results in the compiler creating only one class and one instance per coroutine.   
+It's crucial to implement continuations efficiently, i.e. create as few classes and objects as possible. Many languages implement them through _state machines_, and in the case of Kotlin this approach results in the compiler creating only one class and one instance per coroutine.   
  
 Main idea: a coroutine is compiled to a state machine, where states correspond to suspension points. Example: let's take a coroutine with two suspension points:
  
