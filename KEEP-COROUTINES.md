@@ -275,7 +275,7 @@ Every state is an entry point to one of the continuations of this coroutine (the
 The code is compiled to an anonymous class that has a method implementing the state machine, a field holding the current state of the state machine, and fields for local variables of the coroutines that are shared between states (there may also be fields for the closure of the coroutine, but in this case it's empty). Here's pseudo-bytecode for the coroutine above: 
   
 ``` java
-class <anonymous_for_state_machine> {
+class <anonymous_for_state_machine> implements Coroutine<...> {
     // The current state of the state machine
     int label = 0
     
@@ -334,7 +334,7 @@ while (x < 10) {
 is generated as
 
 ``` java
-class <anonymous_for_state_machine> : Coroutine<...> {
+class <anonymous_for_state_machine> implements Coroutine<...> {
     // The current state of the state machine
     int label = 0
     
@@ -428,7 +428,7 @@ The `c` parameter normally receives a lambda, and its `coroutine` modifier indic
   
 The usual workflow of a builder is to first pass the user-defined parameters to the coroutine. In our example there're no parameters, and this amounts to calling `c()` which returns a `Coroutine` instance. Then, we create a controller and pass it to the `entryPoint()` method of a the `Coroutine`, to obtain the first `Continuation` object whose `resume()` starts the execution of the coroutine. (Passing `Unit` to `resume()` may look weird, but it will be explained below.)    
 
-NOTE: Technically, one could implement the `Coroutine` interface and pass a lambda returning that custom implementation to `asyncExample`. 
+NOTE: Technically, one could implement the `Coroutine` interface and pass a lambda returning that custom implementation to `async`. 
 
 NOTE: To allocate fewer objects, we can make the state machine itself implement `Continuation`, so that its `resume` is the main method of the state machine. In fact, the initial lambda passed to the coroutine builder, `() -> Coroutine<...>` can be also implemented by the same state machine object. Sometimes the lambda and the `entryPoint()` function may be called more than once and with different arguments yielding multiple instances of the same coroutine. To support this case, we can teach the sole lambda-coroutine-continuation object to clone itself.   
 
@@ -655,7 +655,7 @@ Note that suspending in `finally` blocks will likely not be supported, at least 
  
 ## Type-checking coroutines 
 
-The type checker determines that a lambda is a body of coroutine when it's passed as an argument to a parameter marked with the `coroutine` modifier. 
+The type checker determines that a lambda is a body of coroutine when it's passed as an argument to a parameter marked with the `coroutine` modifier (see coroutine builder examples above). 
 
 The following rules apply:
 * only function and constructor parameters may be marked with the `coroutine` modifier,
